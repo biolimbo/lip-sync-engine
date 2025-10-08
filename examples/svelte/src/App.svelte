@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { recordAudio, loadAudio } from 'lip-sync-js';
-  import { lipSyncStore } from './stores/lipSync';
+  import { recordAudio, loadAudio } from 'lip-sync-engine';
+  import { lipSyncEngineStore } from './stores/lipSyncEngine';
 
   interface LogEntry {
     message: string;
@@ -45,7 +45,7 @@
   }
 
   onMount(() => {
-    addLog('Initializing LipSync WASM module...', 'info');
+    addLog('Initializing LipSyncEngine WASM module...', 'info');
     addLog('✅ WASM module loaded successfully', 'success');
     addLog('Viseme images preloaded', 'info');
   });
@@ -91,7 +91,7 @@
 
   async function handleRecord() {
     isRecording = true;
-    lipSyncStore.reset();
+    lipSyncEngineStore.reset();
     audioBuffer = null;
     try {
       addLog('=== Starting Recording ===', 'info');
@@ -109,7 +109,7 @@
       addLog('=== Starting Analysis ===', 'info');
       addLog(`Analyzing ${pcm16.length} samples (${duration}s at 16kHz)${dialogText ? ' with dialog text' : ''}`, 'info');
 
-      await lipSyncStore.analyze(pcm16, {
+      await lipSyncEngineStore.analyze(pcm16, {
         dialogText: dialogText.trim() || undefined,
         sampleRate: 16000,
       });
@@ -128,7 +128,7 @@
     const file = target.files?.[0];
     if (!file) return;
 
-    lipSyncStore.reset();
+    lipSyncEngineStore.reset();
     audioBuffer = null;
     try {
       addLog('=== Loading Audio File ===', 'info');
@@ -144,7 +144,7 @@
       addLog('=== Starting Analysis ===', 'info');
       addLog(`Analyzing ${pcm16.length} samples (${duration}s at 16kHz)${dialogText ? ' with dialog text' : ''}`, 'info');
 
-      await lipSyncStore.analyze(pcm16, {
+      await lipSyncEngineStore.analyze(pcm16, {
         dialogText: dialogText.trim() || undefined,
         sampleRate: 16000,
       });
@@ -158,22 +158,22 @@
   }
 
   function handlePlay() {
-    if ($lipSyncStore.result && audioBuffer) {
+    if ($lipSyncEngineStore.result && audioBuffer) {
       if (audioSource) {
         audioSource.stop();
       }
-      playAnimation($lipSyncStore.result.mouthCues, audioBuffer);
+      playAnimation($lipSyncEngineStore.result.mouthCues, audioBuffer);
     }
   }
 
-  $: if ($lipSyncStore.result && audioBuffer && !isPlaying) {
-    playAnimation($lipSyncStore.result.mouthCues, audioBuffer);
+  $: if ($lipSyncEngineStore.result && audioBuffer && !isPlaying) {
+    playAnimation($lipSyncEngineStore.result.mouthCues, audioBuffer);
   }
 </script>
 
 <div class="app">
   <div class="container">
-    <h1>🎤 LipSync.js</h1>
+    <h1>🎤 LipSyncEngine.js</h1>
     <p class="subtitle">Svelte Example</p>
 
     <div class="input-group">
@@ -183,14 +183,14 @@
         bind:value={dialogText}
         type="text"
         placeholder="Enter the text that will be spoken..."
-        disabled={$lipSyncStore.isAnalyzing || isRecording}
+        disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
       />
     </div>
 
     <div class="controls">
       <button
         on:click={handleRecord}
-        disabled={$lipSyncStore.isAnalyzing || isRecording}
+        disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
         class="btn"
       >
         {isRecording ? '🎙️ Recording...' : '🎙️ Record Audio (5s)'}
@@ -201,14 +201,14 @@
           type="file"
           accept="audio/*"
           on:change={handleFileUpload}
-          disabled={$lipSyncStore.isAnalyzing || isRecording}
+          disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
           style="display: none"
         />
       </label>
     </div>
 
-    <div class="status" class:recording={isRecording} class:analyzing={$lipSyncStore.isAnalyzing}>
-      {isRecording ? 'Recording... Speak now!' : $lipSyncStore.isAnalyzing ? 'Analyzing audio...' : 'Ready to analyze audio'}
+    <div class="status" class:recording={isRecording} class:analyzing={$lipSyncEngineStore.isAnalyzing}>
+      {isRecording ? 'Recording... Speak now!' : $lipSyncEngineStore.isAnalyzing ? 'Analyzing audio...' : 'Ready to analyze audio'}
     </div>
 
     <div class="viseme-display">
@@ -228,7 +228,7 @@
       </div>
     </div>
 
-    {#if $lipSyncStore.result}
+    {#if $lipSyncEngineStore.result}
       <div class="results">
         <div class="results-header">
           <h3>Lip Sync Results</h3>
@@ -241,7 +241,7 @@
           </button>
         </div>
         <div class="cues-list">
-          {#each $lipSyncStore.result.mouthCues as cue, index}
+          {#each $lipSyncEngineStore.result.mouthCues as cue, index}
             <div class="cue">
               <span class="cue-time">
                 {cue.start.toFixed(2)}s - {cue.end.toFixed(2)}s
@@ -253,9 +253,9 @@
       </div>
     {/if}
 
-    {#if $lipSyncStore.error}
+    {#if $lipSyncEngineStore.error}
       <div class="error">
-        Error: {$lipSyncStore.error.message}
+        Error: {$lipSyncEngineStore.error.message}
       </div>
     {/if}
 

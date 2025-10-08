@@ -16,4 +16,4 @@ emmake make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 cd ..
 
 echo "✅ WASM build complete!"
-echo "   Output: dist/wasm/lip-sync.js, .wasm, .data"
+echo "   Output: dist/wasm/lip-sync-engine.js, .wasm, .data"

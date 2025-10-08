@@ -1,6 +1,6 @@
 # Svelte Example
 
-Complete working Svelte application demonstrating LipSync.js integration with a modern dark mode UI.
+Complete working Svelte application demonstrating LipSyncEngine.js integration with a modern dark mode UI.
 
 ## Features
 
@@ -31,19 +31,19 @@ This example uses unpkg.com CDN to load WASM files - **this is the recommended a
 
 The initialization uses CDN URLs:
 ```typescript
-await lipSync.init({
-  wasmPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.wasm',
-  dataPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.data',
-  jsPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.js'
+await lipSyncEngine.init({
+  wasmPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.wasm',
+  dataPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.data',
+  jsPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.js'
 });
 ```
 
 For production, pin to a specific version:
 ```typescript
-await lipSync.init({
-  wasmPath: 'https://unpkg.com/lip-sync-js@1.0.0/dist/wasm/lip-sync.wasm',
-  dataPath: 'https://unpkg.com/lip-sync-js@1.0.0/dist/wasm/lip-sync.data',
-  jsPath: 'https://unpkg.com/lip-sync-js@1.0.0/dist/wasm/lip-sync.js'
+await lipSyncEngine.init({
+  wasmPath: 'https://unpkg.com/lip-sync-engine@1.0.0/dist/wasm/lip-sync-engine.wasm',
+  dataPath: 'https://unpkg.com/lip-sync-engine@1.0.0/dist/wasm/lip-sync-engine.data',
+  jsPath: 'https://unpkg.com/lip-sync-engine@1.0.0/dist/wasm/lip-sync-engine.js'
 });
 ```
 
@@ -55,7 +55,7 @@ examples/svelte/
 │   └── visemes/              # Symlink to shared viseme images
 ├── src/
 │   ├── stores/
-│   │   └── lipSync.ts         # Svelte store
+│   │   └── lipSyncEngine.ts   # Svelte store
 │   ├── App.svelte              # Main application (dark mode)
 │   ├── main.ts                 # Entry point
 │   └── app.css                 # Global styles
@@ -70,21 +70,21 @@ examples/svelte/
 
 ### Svelte Store
 
-The `lipSyncStore` provides reactive state management:
+The `lipSyncEngineStore` provides reactive state management:
 
 ```svelte
 <script>
-  import { lipSyncStore } from './stores/lipSync';
-  import { recordAudio } from 'lip-sync-js';
+  import { lipSyncEngineStore } from './stores/lipSyncEngine';
+  import { recordAudio } from 'lip-sync-engine';
 
   async function handleRecord() {
     const { pcm16 } = await recordAudio(5000);
-    await lipSyncStore.analyze(pcm16, { dialogText: "Hello world" });
+    await lipSyncEngineStore.analyze(pcm16, { dialogText: "Hello world" });
   }
 </script>
 
-<button on:click={handleRecord} disabled={$lipSyncStore.isAnalyzing}>
-  {$lipSyncStore.isAnalyzing ? 'Analyzing...' : 'Record'}
+<button on:click={handleRecord} disabled={$lipSyncEngineStore.isAnalyzing}>
+  {$lipSyncEngineStore.isAnalyzing ? 'Analyzing...' : 'Record'}
 </button>
 ```
 
@@ -115,8 +115,8 @@ The example demonstrates synchronized viseme animation with Svelte reactivity:
   }
 
   // Auto-play when result is available
-  $: if ($lipSyncStore.result && audioBuffer) {
-    playAnimation($lipSyncStore.result.mouthCues, audioBuffer);
+  $: if ($lipSyncEngineStore.result && audioBuffer) {
+    playAnimation($lipSyncEngineStore.result.mouthCues, audioBuffer);
   }
 </script>
 
@@ -154,5 +154,5 @@ npm run preview
 - Svelte 4
 - TypeScript
 - Vite
-- LipSync.js (via npm + CDN for WASM)
+- LipSyncEngine.js (via npm + CDN for WASM)
 - Web Audio API

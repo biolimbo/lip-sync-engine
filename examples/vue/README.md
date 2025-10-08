@@ -1,6 +1,6 @@
 # Vue Example
 
-Complete working Vue 3 application demonstrating LipSync.js integration with a modern dark mode UI.
+Complete working Vue 3 application demonstrating LipSyncEngine.js integration with a modern dark mode UI.
 
 ## Features
 
@@ -31,19 +31,19 @@ This example uses unpkg.com CDN to load WASM files - **this is the recommended a
 
 The initialization uses CDN URLs:
 ```typescript
-await lipSync.init({
-  wasmPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.wasm',
-  dataPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.data',
-  jsPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.js'
+await lipSyncEngine.init({
+  wasmPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.wasm',
+  dataPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.data',
+  jsPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.js'
 });
 ```
 
 For production, pin to a specific version:
 ```typescript
-await lipSync.init({
-  wasmPath: 'https://unpkg.com/lip-sync-js@1.0.0/dist/wasm/lip-sync.wasm',
-  dataPath: 'https://unpkg.com/lip-sync-js@1.0.0/dist/wasm/lip-sync.data',
-  jsPath: 'https://unpkg.com/lip-sync-js@1.0.0/dist/wasm/lip-sync.js'
+await lipSyncEngine.init({
+  wasmPath: 'https://unpkg.com/lip-sync-engine@1.0.0/dist/wasm/lip-sync-engine.wasm',
+  dataPath: 'https://unpkg.com/lip-sync-engine@1.0.0/dist/wasm/lip-sync-engine.data',
+  jsPath: 'https://unpkg.com/lip-sync-engine@1.0.0/dist/wasm/lip-sync-engine.js'
 });
 ```
 
@@ -55,7 +55,7 @@ examples/vue/
 │   └── visemes/              # Symlink to shared viseme images
 ├── src/
 │   ├── composables/
-│   │   └── useLipSync.ts      # Vue composable
+│   │   └── useLipSyncEngine.ts # Vue composable
 │   ├── App.vue                 # Main application (dark mode)
 │   ├── main.ts                 # Entry point
 │   └── style.css               # Global styles
@@ -69,14 +69,14 @@ examples/vue/
 
 ### Composable
 
-The `useLipSync` composable provides a clean API:
+The `useLipSyncEngine` composable provides a clean API:
 
 ```vue
 <script setup lang="ts">
-import { useLipSync } from './composables/useLipSync';
-import { recordAudio } from 'lip-sync-js';
+import { useLipSyncEngine } from './composables/useLipSyncEngine';
+import { recordAudio } from 'lip-sync-engine';
 
-const { analyze, result, isAnalyzing, error, reset } = useLipSync();
+const { analyze, result, isAnalyzing, error, reset } = useLipSyncEngine();
 
 const handleRecord = async () => {
   const { pcm16 } = await recordAudio(5000);
@@ -162,5 +162,5 @@ npm run preview
 - Vue 3
 - TypeScript
 - Vite
-- LipSync.js (via npm + CDN for WASM)
+- LipSyncEngine.js (via npm + CDN for WASM)
 - Web Audio API

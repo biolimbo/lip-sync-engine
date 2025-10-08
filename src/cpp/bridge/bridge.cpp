@@ -1,6 +1,6 @@
 #include "bridge.h"
 #include "audio_utils.h"
-#include "lib/lipSyncLib.h"
+#include "lib/lipSyncEngineLib.h"
 #include "recognition/PocketSphinxRecognizer.h"
 #include "exporters/JsonExporter.h"
 #include "animation/targetShapeSet.h"
@@ -48,8 +48,8 @@ static void clear_error() {
 	g_last_error.clear();
 }
 
-// Initialize LipSync WASM module
-extern "C" int lipsync_init(const char* models_path) {
+// Initialize LipSyncEngine WASM module
+extern "C" int lipsyncengine_init(const char* models_path) {
 	try {
 		clear_error();
 
@@ -78,8 +78,8 @@ extern "C" int lipsync_init(const char* models_path) {
 	}
 }
 
-// Analyze PCM16 audio and generate JSON lip-sync data
-extern "C" const char* lipsync_analyze_pcm16(
+// Analyze PCM16 audio and generate JSON lip-sync-engine data
+extern "C" const char* lipsyncengine_analyze_pcm16(
 	const int16_t* pcm16,
 	int32_t sample_count,
 	int32_t sample_rate,
@@ -89,7 +89,7 @@ extern "C" const char* lipsync_analyze_pcm16(
 		clear_error();
 
 		if (!g_initialized) {
-			set_error("Module not initialized. Call lipsync_init() first");
+			set_error("Module not initialized. Call lipsyncengine_init() first");
 			return nullptr;
 		}
 
@@ -172,15 +172,15 @@ extern "C" const char* lipsync_analyze_pcm16(
 	}
 }
 
-// Free memory allocated by lipsync_analyze_pcm16
-extern "C" void lipsync_free(const char* ptr) {
+// Free memory allocated by lipsyncengine_analyze_pcm16
+extern "C" void lipsyncengine_free(const char* ptr) {
 	if (ptr) {
 		free(const_cast<char*>(ptr));
 	}
 }
 
 // Get last error message
-extern "C" const char* lipsync_get_last_error() {
+extern "C" const char* lipsyncengine_get_last_error() {
 	if (g_last_error.empty()) {
 		return nullptr;
 	}

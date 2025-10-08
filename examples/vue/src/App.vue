@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, nextTick } from 'vue';
-import { recordAudio, loadAudio } from 'lip-sync-js';
-import { useLipSync } from './composables/useLipSync';
+import { recordAudio, loadAudio } from 'lip-sync-engine';
+import { useLipSyncEngine } from './composables/useLipSyncEngine';
 
 interface LogEntry {
   message: string;
@@ -9,7 +9,7 @@ interface LogEntry {
   timestamp: string;
 }
 
-const { analyze, result, isAnalyzing, error, reset } = useLipSync();
+const { analyze, result, isAnalyzing, error, reset } = useLipSyncEngine();
 const dialogText = ref('');
 const isRecording = ref(false);
 const currentViseme = ref('X');
@@ -48,7 +48,7 @@ const addLog = (message: string, type: LogEntry['type'] = 'info') => {
 };
 
 onMounted(() => {
-  addLog('Initializing LipSync WASM module...', 'info');
+  addLog('Initializing LipSyncEngine WASM module...', 'info');
   addLog('✅ WASM module loaded successfully', 'success');
   addLog('Viseme images preloaded', 'info');
 });
@@ -179,7 +179,7 @@ watch(result, (newResult) => {
 <template>
   <div class="app">
     <div class="container">
-      <h1>🎤 LipSync.js</h1>
+      <h1>🎤 LipSyncEngine.js</h1>
       <p class="subtitle">Vue Example</p>
 
       <div class="input-group">

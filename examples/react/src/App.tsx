@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { recordAudio, loadAudio } from 'lip-sync-js';
-import { useLipSync } from './hooks/useLipSync';
+import { recordAudio, loadAudio } from 'lip-sync-engine';
+import { useLipSyncEngine } from './hooks/useLipSyncEngine';
 import './App.css';
 
 interface LogEntry {
@@ -10,7 +10,7 @@ interface LogEntry {
 }
 
 function App() {
-  const { analyze, result, isAnalyzing, error, reset } = useLipSync();
+  const { analyze, result, isAnalyzing, error, reset } = useLipSyncEngine();
   const [dialogText, setDialogText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [currentViseme, setCurrentViseme] = useState('X');
@@ -50,7 +50,7 @@ function App() {
   }, [logs]);
 
   useEffect(() => {
-    addLog('Initializing LipSync WASM module...', 'info');
+    addLog('Initializing LipSyncEngine WASM module...', 'info');
     addLog('✅ WASM module loaded successfully', 'success');
     addLog('Viseme images preloaded', 'info');
   }, []);
@@ -180,7 +180,7 @@ function App() {
   return (
     <div className="app">
       <div className="container">
-        <h1>🎤 LipSync.js</h1>
+        <h1>🎤 LipSyncEngine.js</h1>
         <p className="subtitle">React Example</p>
 
         <div className="input-group">

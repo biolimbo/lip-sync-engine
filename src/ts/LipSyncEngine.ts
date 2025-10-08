@@ -1,7 +1,7 @@
 import type {
-  LipSyncResult,
-  LipSyncOptions,
-  LipSyncModule,
+  LipSyncEngineResult,
+  LipSyncEngineOptions,
+  LipSyncEngineModule,
   WasmLoaderOptions,
 } from './types';
 import { WasmLoader } from './WasmLoader';
@@ -12,12 +12,12 @@ import { WasmLoader } from './WasmLoader';
  *
  * @example Vanilla JavaScript
  * ```typescript
- * import { LipSync } from 'lip-sync-js';
+ * import { LipSyncEngine } from 'lip-sync-engine';
  *
- * const lipSync = LipSync.getInstance();
- * await lipSync.init();
+ * const lipSyncEngine = LipSyncEngine.getInstance();
+ * await lipSyncEngine.init();
  *
- * const result = await lipSync.analyze(pcm16Buffer, {
+ * const result = await lipSyncEngine.analyze(pcm16Buffer, {
  *   dialogText: "Hello world",
  *   sampleRate: 16000
  * });
@@ -28,17 +28,17 @@ import { WasmLoader } from './WasmLoader';
  * @example React
  * ```typescript
  * // Create a custom hook in your app
- * function useLipSync() {
+ * function useLipSyncEngine() {
  *   const [result, setResult] = useState(null);
- *   const lipSyncRef = useRef(LipSync.getInstance());
+ *   const lipSyncEngineRef = useRef(LipSyncEngine.getInstance());
  *
  *   useEffect(() => {
- *     lipSyncRef.current.init();
- *     return () => lipSyncRef.current.destroy();
+ *     lipSyncEngineRef.current.init();
+ *     return () => lipSyncEngineRef.current.destroy();
  *   }, []);
  *
  *   const analyze = async (pcm16, options) => {
- *     const result = await lipSyncRef.current.analyze(pcm16, options);
+ *     const result = await lipSyncEngineRef.current.analyze(pcm16, options);
  *     setResult(result);
  *   };
  *
@@ -46,9 +46,9 @@ import { WasmLoader } from './WasmLoader';
  * }
  * ```
  */
-export class LipSync {
-  private static instance: LipSync | null = null;
-  private module: LipSyncModule | null = null;
+export class LipSyncEngine {
+  private static instance: LipSyncEngine | null = null;
+  private module: LipSyncEngineModule | null = null;
   private initialized = false;
   private initPromise: Promise<void> | null = null;
 
@@ -57,9 +57,9 @@ export class LipSync {
   /**
    * Get singleton instance
    */
-  static getInstance(): LipSync {
+  static getInstance(): LipSyncEngine {
     if (!this.instance) {
-      this.instance = new LipSync();
+      this.instance = new LipSyncEngine();
     }
     return this.instance;
   }
@@ -78,21 +78,21 @@ export class LipSync {
       // Load WASM module
       this.module = await WasmLoader.load(options);
 
-      // Initialize LipSync with models
+      // Initialize LipSyncEngine with models
       const modelsPath = '/models';
       const modelsPathLen = this.module.lengthBytesUTF8(modelsPath) + 1;
       const modelsPathPtr = this.module._malloc(modelsPathLen);
 
       try {
         this.module.stringToUTF8(modelsPath, modelsPathPtr, modelsPathLen);
-        const result = this.module._lipsync_init(modelsPathPtr);
+        const result = this.module._lipsyncengine_init(modelsPathPtr);
 
         if (result !== 0) {
-          const errorPtr = this.module._lipsync_get_last_error();
+          const errorPtr = this.module._lipsyncengine_get_last_error();
           const error = errorPtr
             ? this.module.UTF8ToString(errorPtr)
             : 'Unknown error';
-          throw new Error(`LipSync initialization failed: ${error}`);
+          throw new Error(`LipSyncEngine initialization failed: ${error}`);
         }
 
         this.initialized = true;
@@ -105,11 +105,11 @@ export class LipSync {
   }
 
   /**
-   * Analyze audio and generate lip-sync data
+   * Analyze audio and generate lip-sync-engine data
    *
    * @param pcm16 - 16-bit PCM audio buffer (mono, 16kHz recommended)
    * @param options - Optional configuration
-   * @returns Promise resolving to lip-sync result with mouth cues
+   * @returns Promise resolving to lip-sync-engine result with mouth cues
    *
    * @throws {TypeError} If pcm16 is not an Int16Array
    * @throws {Error} If audio buffer is empty
@@ -117,8 +117,8 @@ export class LipSync {
    */
   async analyze(
     pcm16: Int16Array,
-    options: LipSyncOptions = {}
-  ): Promise<LipSyncResult> {
+    options: LipSyncEngineOptions = {}
+  ): Promise<LipSyncEngineResult> {
     await this.init();
 
     if (!this.module) {
@@ -158,7 +158,7 @@ export class LipSync {
       }
 
       // Call WASM function
-      resultPtr = this.module._lipsync_analyze_pcm16(
+      resultPtr = this.module._lipsyncengine_analyze_pcm16(
         pcm16Ptr,
         pcm16.length,
         sampleRate,
@@ -166,7 +166,7 @@ export class LipSync {
       );
 
       if (!resultPtr) {
-        const errorPtr = this.module._lipsync_get_last_error();
+        const errorPtr = this.module._lipsyncengine_get_last_error();
         const error = errorPtr
           ? this.module.UTF8ToString(errorPtr)
           : 'Analysis failed';
@@ -175,7 +175,7 @@ export class LipSync {
 
       // Parse JSON result
       const resultJson = this.module.UTF8ToString(resultPtr);
-      const result: LipSyncResult = JSON.parse(resultJson);
+      const result: LipSyncEngineResult = JSON.parse(resultJson);
 
       // Add metadata
       result.metadata = {
@@ -189,7 +189,7 @@ export class LipSync {
       // Always cleanup allocated memory
       if (pcm16Ptr) this.module._free(pcm16Ptr);
       if (dialogPtr) this.module._free(dialogPtr);
-      if (resultPtr) this.module._lipsync_free(resultPtr);
+      if (resultPtr) this.module._lipsyncengine_free(resultPtr);
     }
   }
 
@@ -199,12 +199,12 @@ export class LipSync {
    *
    * @param pcm16 - 16-bit PCM audio buffer
    * @param options - Optional configuration
-   * @returns Promise resolving to lip-sync result
+   * @returns Promise resolving to lip-sync-engine result
    */
   async analyzeAsync(
     pcm16: Int16Array,
-    options: LipSyncOptions = {}
-  ): Promise<LipSyncResult> {
+    options: LipSyncEngineOptions = {}
+  ): Promise<LipSyncEngineResult> {
     // Lazy load WorkerPool to avoid circular dependencies
     const { WorkerPool } = await import('./WorkerPool');
     const pool = WorkerPool.getInstance();
@@ -213,13 +213,13 @@ export class LipSync {
 
   /**
    * Destroy the instance and free resources
-   * Call this when you're completely done with lip-sync analysis
+   * Call this when you're completely done with lip-sync-engine analysis
    */
   destroy(): void {
     this.module = null;
     this.initialized = false;
     this.initPromise = null;
-    LipSync.instance = null;
+    LipSyncEngine.instance = null;
   }
 }
 
@@ -229,9 +229,9 @@ export class LipSync {
  */
 export const analyze = async (
   pcm16: Int16Array,
-  options?: LipSyncOptions
-): Promise<LipSyncResult> => {
-  const instance = LipSync.getInstance();
+  options?: LipSyncEngineOptions
+): Promise<LipSyncEngineResult> => {
+  const instance = LipSyncEngine.getInstance();
   await instance.init();
   return instance.analyze(pcm16, options);
 };
@@ -241,8 +241,8 @@ export const analyze = async (
  */
 export const analyzeAsync = async (
   pcm16: Int16Array,
-  options?: LipSyncOptions
-): Promise<LipSyncResult> => {
-  const instance = LipSync.getInstance();
+  options?: LipSyncEngineOptions
+): Promise<LipSyncEngineResult> => {
+  const instance = LipSyncEngine.getInstance();
   return instance.analyzeAsync(pcm16, options);
 };

@@ -1,5 +1,5 @@
 {
-  "name": "lipsync-svelte-example",
+  "name": "lipsyncengine-svelte-example",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -19,6 +19,6 @@
     "vite": "^5.3.1"
   },
   "dependencies": {
-    "lip-sync-js": "^1.0.0"
+    "lip-sync-engine": "^1.0.0"
   }
 }

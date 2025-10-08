@@ -1,9 +1,9 @@
-# 🎙️ LipSync.js
+# 🎙️ LipSyncEngine.js
 
 > High-quality lip-sync animation from audio in the browser
 
-[![NPM Version](https://img.shields.io/npm/v/lip-sync-js)](https://www.npmjs.com/package/lip-sync-js)
-[![License](https://img.shields.io/npm/l/lip-sync-js)](./LICENSE)
+[![NPM Version](https://img.shields.io/npm/v/lip-sync-engine)](https://www.npmjs.com/package/lip-sync-engine)
+[![License](https://img.shields.io/npm/l/lip-sync-engine)](./LICENSE)
 
 WebAssembly port of [Rhubarb Lip Sync](https://github.com/DanielSWolf/rhubarb-lip-sync) with TypeScript support.
 
@@ -21,7 +21,7 @@ WebAssembly port of [Rhubarb Lip Sync](https://github.com/DanielSWolf/rhubarb-li
 ## 📦 Installation
 
 ```bash
-npm install lip-sync-js
+npm install lip-sync-engine
 ```
 
 ## 🚀 Quick Start
@@ -29,7 +29,7 @@ npm install lip-sync-js
 ### Vanilla JavaScript / TypeScript
 
 ```typescript
-import { analyze, recordAudio } from 'lip-sync-js';
+import { analyze, recordAudio } from 'lip-sync-engine';
 
 // Record audio from microphone
 const { pcm16 } = await recordAudio(5000); // 5 seconds
@@ -54,19 +54,19 @@ result.mouthCues.forEach(cue => {
 
 ```tsx
 import { useState, useEffect, useRef } from 'react';
-import { LipSync, recordAudio } from 'lip-sync-js';
+import { LipSyncEngine, recordAudio } from 'lip-sync-engine';
 
-function useLipSync() {
+function useLipSyncEngine() {
   const [result, setResult] = useState(null);
-  const lipSyncRef = useRef(LipSync.getInstance());
+  const lipSyncEngineRef = useRef(LipSyncEngine.getInstance());
 
   useEffect(() => {
-    lipSyncRef.current.init();
-    return () => lipSyncRef.current.destroy();
+    lipSyncEngineRef.current.init();
+    return () => lipSyncEngineRef.current.destroy();
   }, []);
 
   const analyze = async (pcm16, options) => {
-    const result = await lipSyncRef.current.analyze(pcm16, options);
+    const result = await lipSyncEngineRef.current.analyze(pcm16, options);
     setResult(result);
   };
 
@@ -74,7 +74,7 @@ function useLipSync() {
 }
 
 function MyComponent() {
-  const { analyze, result } = useLipSync();
+  const { analyze, result } = useLipSyncEngine();
 
   const handleRecord = async () => {
     const { pcm16 } = await recordAudio(5000);
@@ -97,17 +97,17 @@ See [examples/react](./examples/react) for complete example.
 ```vue
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
-import { LipSync, recordAudio } from 'lip-sync-js';
+import { LipSyncEngine, recordAudio } from 'lip-sync-engine';
 
 const result = ref(null);
-const lipSync = LipSync.getInstance();
+const lipSyncEngine = LipSyncEngine.getInstance();
 
-onMounted(() => lipSync.init());
-onUnmounted(() => lipSync.destroy());
+onMounted(() => lipSyncEngine.init());
+onUnmounted(() => lipSyncEngine.destroy());
 
 const handleRecord = async () => {
   const { pcm16 } = await recordAudio(5000);
-  result.value = await lipSync.analyze(pcm16, { dialogText: "Hello world" });
+  result.value = await lipSyncEngine.analyze(pcm16, { dialogText: "Hello world" });
 };
 </script>
 
@@ -126,15 +126,15 @@ See [examples/vue](./examples/vue) for complete example.
 ```svelte
 <script>
 import { writable } from 'svelte/store';
-import { LipSync, recordAudio } from 'lip-sync-js';
+import { LipSyncEngine, recordAudio } from 'lip-sync-engine';
 
 const result = writable(null);
-const lipSync = LipSync.getInstance();
-lipSync.init();
+const lipSyncEngine = LipSyncEngine.getInstance();
+lipSyncEngine.init();
 
 async function handleRecord() {
   const { pcm16 } = await recordAudio(5000);
-  const res = await lipSync.analyze(pcm16, { dialogText: "Hello world" });
+  const res = await lipSyncEngine.analyze(pcm16, { dialogText: "Hello world" });
   result.set(res);
 }
 </script>
@@ -159,7 +159,7 @@ See [examples/svelte](./examples/svelte) for complete example.
 
 ## 🎨 Mouth Shapes (Visemes)
 
-LipSync.js generates 9 mouth shapes based on Preston Blair's phoneme categorization:
+LipSyncEngine.js generates 9 mouth shapes based on Preston Blair's phoneme categorization:
 
 | Shape | Description | Example Sounds |
 |-------|-------------|----------------|
@@ -186,18 +186,18 @@ LipSync.js generates 9 mouth shapes based on Preston Blair's phoneme categorizat
 
 ```typescript
 // Simple one-off analysis
-import { analyze } from 'lip-sync-js';
+import { analyze } from 'lip-sync-engine';
 const result = await analyze(pcm16, options);
 
 // Async analysis (non-blocking)
-import { analyzeAsync } from 'lip-sync-js';
+import { analyzeAsync } from 'lip-sync-engine';
 const result = await analyzeAsync(pcm16, options);
 
 // Using the main class
-import { LipSync } from 'lip-sync-js';
-const lipSync = LipSync.getInstance();
-await lipSync.init();
-const result = await lipSync.analyze(pcm16, options);
+import { LipSyncEngine } from 'lip-sync-engine';
+const lipSyncEngine = LipSyncEngine.getInstance();
+await lipSyncEngine.init();
+const result = await lipSyncEngine.analyze(pcm16, options);
 ```
 
 ### Audio Utilities
@@ -209,7 +209,7 @@ import {
   audioBufferToInt16,
   float32ToInt16,
   resample
-} from 'lip-sync-js';
+} from 'lip-sync-engine';
 
 // Record from microphone
 const { pcm16, audioBuffer } = await recordAudio(5000); // 5 seconds
@@ -232,7 +232,7 @@ interface MouthCue {
   value: string;  // X, A, B, C, D, E, F, G, or H
 }
 
-interface LipSyncResult {
+interface LipSyncEngineResult {
   mouthCues: MouthCue[];
   metadata?: {
     duration: number;
@@ -241,7 +241,7 @@ interface LipSyncResult {
   };
 }
 
-interface LipSyncOptions {
+interface LipSyncEngineOptions {
   dialogText?: string;  // Improves accuracy significantly
   sampleRate?: number;  // Default: 16000 (recommended)
 }
@@ -281,7 +281,7 @@ MIT License - see [LICENSE](./LICENSE)
 
 ## 🐛 Issues
 
-Report issues at [https://github.com/biolimbo/lip-sync-js/issues](https://github.com/biolimbo/lip-sync-js/issues)
+Report issues at [https://github.com/biolimbo/lip-sync-engine/issues](https://github.com/biolimbo/lip-sync-engine/issues)
 
 ## 📈 Roadmap
 

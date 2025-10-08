@@ -11,9 +11,9 @@ export interface MouthCue {
 }
 
 /**
- * Result of lip-sync analysis
+ * Result of lip-sync-engine analysis
  */
-export interface LipSyncResult {
+export interface LipSyncEngineResult {
   /** Array of mouth cues with precise timing */
   mouthCues: MouthCue[];
   /** Optional metadata about the analysis */
@@ -28,9 +28,9 @@ export interface LipSyncResult {
 }
 
 /**
- * Options for lip-sync analysis
+ * Options for lip-sync-engine analysis
  */
-export interface LipSyncOptions {
+export interface LipSyncEngineOptions {
   /**
    * Optional dialog text for improved recognition accuracy
    * Providing the expected text significantly improves results
@@ -53,18 +53,18 @@ export type ProgressCallback = (progress: number) => void;
 /**
  * WASM module interface (internal)
  */
-export interface LipSyncModule {
+export interface LipSyncEngineModule {
   _malloc(size: number): number;
   _free(ptr: number): void;
-  _lipsync_init(modelsPathPtr: number): number;
-  _lipsync_analyze_pcm16(
+  _lipsyncengine_init(modelsPathPtr: number): number;
+  _lipsyncengine_analyze_pcm16(
     pcm16Ptr: number,
     sampleCount: number,
     sampleRate: number,
     dialogPtr: number
   ): number;
-  _lipsync_free(ptr: number): void;
-  _lipsync_get_last_error(): number;
+  _lipsyncengine_free(ptr: number): void;
+  _lipsyncengine_get_last_error(): number;
   HEAP16: Int16Array;
   lengthBytesUTF8(str: string): number;
   stringToUTF8(str: string, ptr: number, maxLen: number): void;

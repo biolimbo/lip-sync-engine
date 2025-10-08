@@ -1,19 +1,19 @@
-import type { LipSyncModule, WasmLoaderOptions } from './types';
+import type { LipSyncEngineModule, WasmLoaderOptions } from './types';
 
 /**
  * Loads the WASM module
  * This is a singleton loader that handles WASM initialization
  */
 export class WasmLoader {
-  private static modulePromise: Promise<LipSyncModule> | null = null;
-  private static module: LipSyncModule | null = null;
+  private static modulePromise: Promise<LipSyncEngineModule> | null = null;
+  private static module: LipSyncEngineModule | null = null;
 
   /**
    * Load the WASM module
    * @param options - Optional paths to WASM files
    * @returns Promise resolving to the loaded WASM module
    */
-  static async load(options: WasmLoaderOptions = {}): Promise<LipSyncModule> {
+  static async load(options: WasmLoaderOptions = {}): Promise<LipSyncEngineModule> {
     // Return cached module if already loaded
     if (this.module) {
       return this.module;
@@ -34,11 +34,11 @@ export class WasmLoader {
    */
   private static async _loadModule(
     options: WasmLoaderOptions
-  ): Promise<LipSyncModule> {
+  ): Promise<LipSyncEngineModule> {
     const {
-      wasmPath = '/dist/wasm/lip-sync.wasm',
-      dataPath = '/dist/wasm/lip-sync.data',
-      jsPath = '/dist/wasm/lip-sync.js',
+      wasmPath = '/dist/wasm/lip-sync-engine.wasm',
+      dataPath = '/dist/wasm/lip-sync-engine.data',
+      jsPath = '/dist/wasm/lip-sync-engine.js',
     } = options;
 
     // Check if we're in a browser environment
@@ -47,7 +47,7 @@ export class WasmLoader {
     }
 
     // Dynamically load the Emscripten-generated JS file
-    // This creates a global function (e.g., createLipSyncModule)
+    // This creates a global function (e.g., createLipSyncEngineModule)
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
       script.src = jsPath;
@@ -57,11 +57,11 @@ export class WasmLoader {
         try {
           // The Emscripten module should expose a factory function
           // We need to get it from the global scope
-          const createModule = (window as any).createLipSyncModule;
+          const createModule = (window as any).createLipSyncEngineModule;
 
           if (!createModule) {
             throw new Error(
-              'WASM module factory not found. Make sure lip-sync.js is loaded correctly.'
+              'WASM module factory not found. Make sure lip-sync-engine.js is loaded correctly.'
             );
           }
 
@@ -77,7 +77,7 @@ export class WasmLoader {
             },
           });
 
-          resolve(module as LipSyncModule);
+          resolve(module as LipSyncEngineModule);
         } catch (error) {
           reject(error);
         }

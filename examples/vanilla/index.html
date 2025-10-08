@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LipSync.js - Vanilla JavaScript (CDN)</title>
+  <title>LipSyncEngine.js - Vanilla JavaScript (CDN)</title>
   <style>
     * {
       margin: 0;
@@ -338,7 +338,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>🎤 LipSync.js</h1>
+    <h1>🎤 LipSyncEngine.js</h1>
     <p class="subtitle">Vanilla JavaScript Example (CDN)</p>
 
     <div class="input-group">
@@ -356,7 +356,7 @@
       <input type="file" id="fileInput" accept="audio/*" style="display: none;">
     </div>
 
-    <div id="status" class="status">Initializing LipSync...</div>
+    <div id="status" class="status">Initializing LipSyncEngineEngine...</div>
 
     <div id="visemeDisplay" class="viseme-display">
       <div>
@@ -393,7 +393,7 @@
 
   <script type="module">
     // Import from unpkg.com CDN
-    import { LipSync, recordAudio, loadAudio } from 'https://unpkg.com/lip-sync-js@latest/dist/index.mjs';
+    import { LipSyncEngine, recordAudio, loadAudio } from 'https://unpkg.com/lip-sync-engine@latest/dist/index.mjs';
 
     const recordBtn = document.getElementById('recordBtn');
     const loadBtn = document.getElementById('loadBtn');
@@ -421,7 +421,7 @@
       H: 'Wide Open'
     };
 
-    let lipSync = null;
+    let lipSyncEngine = null;
     let currentPlayback = null;
     let lastResult = null;
     let lastAudioBuffer = null;
@@ -476,15 +476,15 @@
     // Initialize with X viseme
     setViseme('X');
 
-    // Initialize LipSync
+    // Initialize LipSyncEngine
     async function init() {
       try {
-        addLog('Initializing LipSync WASM module...', 'info');
-        lipSync = LipSync.getInstance();
-        await lipSync.init({
-          wasmPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.wasm',
-          dataPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.data',
-          jsPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.js'
+        addLog('Initializing LipSyncEngine WASM module...', 'info');
+        lipSyncEngine = LipSyncEngine.getInstance();
+        await lipSyncEngine.init({
+          wasmPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.wasm',
+          dataPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.data',
+          jsPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.js'
         });
         addLog('✅ WASM module loaded successfully', 'success');
         addLog('Viseme images preloaded', 'info');
@@ -493,7 +493,7 @@
         recordBtn.disabled = false;
         loadBtn.disabled = false;
       } catch (err) {
-        showError('Failed to initialize LipSync: ' + err.message);
+        showError('Failed to initialize LipSyncEngine: ' + err.message);
       }
     }
 
@@ -508,7 +508,7 @@
         const duration = (pcm16.length / 16000).toFixed(2);
         addLog(`Analyzing ${pcm16.length} samples (${duration}s at 16kHz)${dialogText ? ' with dialog text' : ''}`, 'info');
 
-        const result = await lipSync.analyze(pcm16, {
+        const result = await lipSyncEngine.analyze(pcm16, {
           dialogText: dialogText || undefined,
           sampleRate: 16000
         });

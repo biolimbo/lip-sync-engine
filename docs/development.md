@@ -1,6 +1,6 @@
 # Development Guide
 
-Guide for developing and testing LipSync.js locally.
+Guide for developing and testing LipSyncEngine.js locally.
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ Guide for developing and testing LipSync.js locally.
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd lip-sync-js
+cd lip-sync-engine
 
 # Install dependencies
 npm install
@@ -57,14 +57,14 @@ In your test project or example:
 
 ```bash
 # Link to the local package
-npm link lip-sync-js
+npm link lip-sync-engine
 ```
 
 #### Step 3: Development Loop
 
 ```bash
 # 1. Make changes to the source
-vim src/ts/LipSync.ts
+vim src/ts/LipSyncEngine.ts
 
 # 2. Rebuild
 npm run build
@@ -113,7 +113,7 @@ npm run build
 ## Project Structure
 
 ```
-lip-sync-js/
+lip-sync-engine/
 ├── src/
 │   ├── cpp/           # C++ source (WASM)
 │   └── ts/            # TypeScript wrapper
@@ -134,7 +134,7 @@ lip-sync-js/
 1. Runs CMake with Emscripten
 2. Compiles C++ to WebAssembly
 3. Outputs to `dist/wasm/`
-4. Renames files from `lipsync-wasm.*` to `lip-sync.*`
+4. Renames files from `lipsyncengine-wasm.*` to `lip-sync-engine.*`
 
 ### Build TypeScript (`npm run build:ts`)
 
@@ -148,7 +148,7 @@ lip-sync-js/
 
 1. **Add TypeScript API**:
    ```typescript
-   // src/ts/LipSync.ts
+   // src/ts/LipSyncEngine.ts
    async newFeature() {
      // Implementation
    }
@@ -165,7 +165,7 @@ lip-sync-js/
 3. **Export**:
    ```typescript
    // src/ts/index.ts
-   export { newFeature } from './LipSync';
+   export { newFeature } from './LipSyncEngine';
    ```
 
 4. **Build and Test**:
@@ -196,7 +196,7 @@ emcmake cmake .. -DCMAKE_BUILD_TYPE=Debug
 emmake make
 
 # Check WASM output
-wasm-objdump -x dist/wasm/lip-sync.wasm
+wasm-objdump -x dist/wasm/lip-sync-engine.wasm
 ```
 
 ## Testing Workflow
@@ -210,7 +210,7 @@ wasm-objdump -x dist/wasm/lip-sync.wasm
 ```bash
 npm run build
 cd examples/react
-npm link lip-sync-js
+npm link lip-sync-engine
 npm run dev
 ```
 
@@ -244,7 +244,7 @@ npm run build
 
 # 2. Test the build
 npm pack
-npm install ./lip-sync-js-1.0.0.tgz
+npm install ./lip-sync-engine-1.0.0.tgz
 
 # 3. Create git tag
 git tag v1.0.0
@@ -275,7 +275,7 @@ npm run dev
 ls dist/wasm/
 
 # Check if served correctly (should see WASM files)
-curl http://localhost:3000/dist/wasm/lip-sync.wasm
+curl http://localhost:3000/dist/wasm/lip-sync-engine.wasm
 ```
 
 ### Issue: TypeScript errors in examples
@@ -285,7 +285,7 @@ curl http://localhost:3000/dist/wasm/lip-sync.wasm
 ```bash
 npm run build:ts
 cd examples/react
-rm -rf node_modules/lip-sync-js
+rm -rf node_modules/lip-sync-engine
 npm install
 ```
 

@@ -32,7 +32,7 @@ inline std::string generateUuid() {
 
 // Get binary path (WASM virtual filesystem)
 inline std::string getBinPath() {
-	return "/wasm/lip-sync.wasm";
+	return "/wasm/lip-sync-engine.wasm";
 }
 
 // Get binary directory (WASM virtual filesystem)

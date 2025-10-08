@@ -1,5 +1,5 @@
 // Main exports
-export { LipSync, analyze, analyzeAsync } from './LipSync';
+export { LipSyncEngine, analyze, analyzeAsync } from './LipSyncEngine';
 export { WasmLoader } from './WasmLoader';
 export { WorkerPool } from './WorkerPool';
 
@@ -9,9 +9,9 @@ export * from './utils/AudioConverter';
 // Types
 export type {
   MouthCue,
-  LipSyncResult,
-  LipSyncOptions,
-  LipSyncModule,
+  LipSyncEngineResult,
+  LipSyncEngineOptions,
+  LipSyncEngineModule,
   ProgressCallback,
   WasmLoaderOptions,
 } from './types';

@@ -1,6 +1,6 @@
 # React Example
 
-Complete working React application demonstrating LipSync.js integration with a modern dark mode UI.
+Complete working React application demonstrating LipSyncEngine.js integration with a modern dark mode UI.
 
 ## Features
 
@@ -31,19 +31,19 @@ This example uses unpkg.com CDN to load WASM files - **this is the recommended a
 
 The initialization uses CDN URLs:
 ```typescript
-await lipSync.init({
-  wasmPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.wasm',
-  dataPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.data',
-  jsPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.js'
+await lipSyncEngine.init({
+  wasmPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.wasm',
+  dataPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.data',
+  jsPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.js'
 });
 ```
 
 For production, pin to a specific version:
 ```typescript
-await lipSync.init({
-  wasmPath: 'https://unpkg.com/lip-sync-js@1.0.0/dist/wasm/lip-sync.wasm',
-  dataPath: 'https://unpkg.com/lip-sync-js@1.0.0/dist/wasm/lip-sync.data',
-  jsPath: 'https://unpkg.com/lip-sync-js@1.0.0/dist/wasm/lip-sync.js'
+await lipSyncEngine.init({
+  wasmPath: 'https://unpkg.com/lip-sync-engine@1.0.0/dist/wasm/lip-sync-engine.wasm',
+  dataPath: 'https://unpkg.com/lip-sync-engine@1.0.0/dist/wasm/lip-sync-engine.data',
+  jsPath: 'https://unpkg.com/lip-sync-engine@1.0.0/dist/wasm/lip-sync-engine.js'
 });
 ```
 
@@ -55,7 +55,7 @@ examples/react/
 │   └── visemes/              # Symlink to shared viseme images
 ├── src/
 │   ├── hooks/
-│   │   └── useLipSync.ts     # Custom React hook
+│   │   └── useLipSyncEngine.ts # Custom React hook
 │   ├── App.tsx                # Main application
 │   ├── App.css                # Dark mode styles
 │   ├── main.tsx               # Entry point
@@ -70,14 +70,14 @@ examples/react/
 
 ### Custom Hook
 
-The `useLipSync` hook provides a clean API:
+The `useLipSyncEngine` hook provides a clean API:
 
 ```typescript
-import { useLipSync } from './hooks/useLipSync';
-import { recordAudio } from 'lip-sync-js';
+import { useLipSyncEngine } from './hooks/useLipSyncEngine';
+import { recordAudio } from 'lip-sync-engine';
 
 function MyComponent() {
-  const { analyze, result, isAnalyzing, error, reset } = useLipSync();
+  const { analyze, result, isAnalyzing, error, reset } = useLipSyncEngine();
 
   const handleRecord = async () => {
     const { pcm16 } = await recordAudio(5000);
@@ -120,7 +120,7 @@ function playAnimation(mouthCues, buffer) {
 
 ### Key Features
 
-1. **Automatic Initialization** - LipSync initializes on mount with CDN URLs
+1. **Automatic Initialization** - LipSyncEngine initializes on mount with CDN URLs
 2. **Cleanup on Unmount** - Resources are properly freed
 3. **Error Handling** - Comprehensive error states
 4. **TypeScript** - Full type safety
@@ -140,5 +140,5 @@ npm run preview
 - React 18
 - TypeScript
 - Vite
-- LipSync.js (via npm + CDN for WASM)
+- LipSyncEngine.js (via npm + CDN for WASM)
 - Web Audio API

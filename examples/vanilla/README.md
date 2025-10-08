@@ -1,6 +1,6 @@
 # Vanilla JavaScript Example
 
-Complete vanilla JavaScript example demonstrating LipSync.js with real-time viseme playback and modern dark mode UI.
+Complete vanilla JavaScript example demonstrating LipSyncEngine.js with real-time viseme playback and modern dark mode UI.
 
 This example uses the published npm package via unpkg.com CDN - **this is the recommended approach for end users**.
 
@@ -34,39 +34,39 @@ Simply open `index.html` in your browser via any static file server.
 
 ## For Package Users
 
-If you're using lip-sync-js in your own project, refer to `index-cdn.html` for the recommended approach:
+If you're using lip-sync-engine in your own project, refer to `index-cdn.html` for the recommended approach:
 
 ### Option 1: CDN (unpkg.com)
 
 ```html
 <script type="module">
-  import { LipSync, recordAudio, loadAudio } from 'https://unpkg.com/lip-sync-js@latest/dist/index.mjs';
+  import { LipSyncEngine, recordAudio, loadAudio } from 'https://unpkg.com/lip-sync-engine@latest/dist/index.mjs';
 
-  const lipSync = LipSync.getInstance();
-  await lipSync.init({
-    wasmPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.wasm',
-    dataPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.data',
-    jsPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.js'
+  const lipSyncEngine = LipSyncEngine.getInstance();
+  await lipSyncEngine.init({
+    wasmPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.wasm',
+    dataPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.data',
+    jsPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.js'
   });
 </script>
 ```
 
 ### Option 2: Self-hosted
 
-1. Install the package: `npm install lip-sync-js`
+1. Install the package: `npm install lip-sync-engine`
 2. Copy WASM files to your public directory:
    ```bash
-   cp node_modules/lip-sync-js/dist/wasm/* public/wasm/
+   cp node_modules/lip-sync-engine/dist/wasm/* public/wasm/
    ```
 3. Import and configure:
    ```javascript
-   import { LipSync } from 'lip-sync-js';
+   import { LipSyncEngine } from 'lip-sync-engine';
 
-   const lipSync = LipSync.getInstance();
-   await lipSync.init({
-     wasmPath: '/wasm/lip-sync.wasm',
-     dataPath: '/wasm/lip-sync.data',
-     jsPath: '/wasm/lip-sync.js'
+   const lipSyncEngine = LipSyncEngine.getInstance();
+   await lipSyncEngine.init({
+     wasmPath: '/wasm/lip-sync-engine.wasm',
+     dataPath: '/wasm/lip-sync-engine.data',
+     jsPath: '/wasm/lip-sync-engine.js'
    });
    ```
 
@@ -78,13 +78,13 @@ See the React, Vue, or Svelte examples for bundler-based setups.
 
 ### 1. Import the library
 ```javascript
-import { LipSync, recordAudio, loadAudio } from 'lip-sync-js';
+import { LipSyncEngine, recordAudio, loadAudio } from 'lip-sync-engine';
 ```
 
-### 2. Initialize LipSync
+### 2. Initialize LipSyncEngine
 ```javascript
-const lipSync = LipSync.getInstance();
-await lipSync.init();
+const lipSyncEngine = LipSyncEngine.getInstance();
+await lipSyncEngine.init();
 ```
 
 ### 3. Get Audio Data
@@ -93,7 +93,7 @@ await lipSync.init();
 
 ### 4. Analyze
 ```javascript
-const result = await lipSync.analyze(pcm16, {
+const result = await lipSyncEngine.analyze(pcm16, {
   dialogText: "Hello world",
   sampleRate: 16000
 });

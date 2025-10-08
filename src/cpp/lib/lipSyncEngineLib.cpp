@@ -1,4 +1,4 @@
-#include "lipSyncLib.h"
+#include "lipSyncEngineLib.h"
 #include "core/Phone.h"
 #include "tools/textFiles.h"
 #include "animation/mouthAnimation.h"

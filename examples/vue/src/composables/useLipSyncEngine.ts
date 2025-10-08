@@ -1,18 +1,18 @@
 import { ref, onUnmounted } from 'vue';
-import { LipSync } from 'lip-sync-js';
-import type { LipSyncResult, LipSyncOptions } from 'lip-sync-js';
+import { LipSyncEngine } from 'lip-sync-engine';
+import type { LipSyncEngineResult, LipSyncEngineOptions } from 'lip-sync-engine';
 
 /**
- * Example Vue composable for lip-sync-js
+ * Example Vue composable for lip-sync-engine
  * This is NOT part of the package - it's an example showing how to integrate
  *
  * @example
  * ```vue
  * <script setup>
- * import { useLipSync } from './composables/useLipSync';
- * import { recordAudio } from 'lip-sync-js';
+ * import { useLipSyncEngine } from './composables/useLipSyncEngine';
+ * import { recordAudio } from 'lip-sync-engine';
  *
- * const { analyze, result, isAnalyzing, error } = useLipSync();
+ * const { analyze, result, isAnalyzing, error } = useLipSyncEngine();
  *
  * const handleAnalyze = async () => {
  *   const { pcm16 } = await recordAudio(5000);
@@ -31,32 +31,32 @@ import type { LipSyncResult, LipSyncOptions } from 'lip-sync-js';
  * </template>
  * ```
  */
-export function useLipSync() {
-  const result = ref<LipSyncResult | null>(null);
+export function useLipSyncEngine() {
+  const result = ref<LipSyncEngineResult | null>(null);
   const isAnalyzing = ref(false);
   const error = ref<Error | null>(null);
 
-  let lipSync: LipSync | null = null;
+  let lipSyncEngine: LipSyncEngine | null = null;
 
   const init = async () => {
-    if (!lipSync) {
-      lipSync = LipSync.getInstance();
-      await lipSync.init({
-        wasmPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.wasm',
-        dataPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.data',
-        jsPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.js'
+    if (!lipSyncEngine) {
+      lipSyncEngine = LipSyncEngine.getInstance();
+      await lipSyncEngine.init({
+        wasmPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.wasm',
+        dataPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.data',
+        jsPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.js'
       });
     }
   };
 
-  const analyze = async (pcm16: Int16Array, options?: LipSyncOptions) => {
+  const analyze = async (pcm16: Int16Array, options?: LipSyncEngineOptions) => {
     try {
       await init();
 
       isAnalyzing.value = true;
       error.value = null;
 
-      const analysisResult = await lipSync!.analyzeAsync(pcm16, options);
+      const analysisResult = await lipSyncEngine!.analyzeAsync(pcm16, options);
       result.value = analysisResult;
     } catch (err) {
       error.value = err as Error;
@@ -73,7 +73,7 @@ export function useLipSync() {
   };
 
   onUnmounted(() => {
-    lipSync?.destroy();
+    lipSyncEngine?.destroy();
   });
 
   return {

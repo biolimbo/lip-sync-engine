@@ -1,15 +1,15 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { LipSync } from 'lip-sync-js';
-import type { LipSyncResult, LipSyncOptions } from 'lip-sync-js';
+import { LipSyncEngine } from 'lip-sync-engine';
+import type { LipSyncEngineResult, LipSyncEngineOptions } from 'lip-sync-engine';
 
 /**
- * Example React hook for lip-sync-js
+ * Example React hook for lip-sync-engine
  * This is NOT part of the package - it's an example showing how to integrate
  *
  * @example
  * ```tsx
  * function MyComponent() {
- *   const { analyze, result, isAnalyzing, error } = useLipSync();
+ *   const { analyze, result, isAnalyzing, error } = useLipSyncEngine();
  *
  *   const handleAnalyze = async () => {
  *     const { pcm16 } = await recordAudio(5000);
@@ -27,31 +27,31 @@ import type { LipSyncResult, LipSyncOptions } from 'lip-sync-js';
  * }
  * ```
  */
-export function useLipSync() {
-  const [result, setResult] = useState<LipSyncResult | null>(null);
+export function useLipSyncEngine() {
+  const [result, setResult] = useState<LipSyncEngineResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  const lipSyncRef = useRef<LipSync | null>(null);
+  const lipSyncEngineRef = useRef<LipSyncEngine | null>(null);
 
   useEffect(() => {
-    // Initialize LipSync instance
-    lipSyncRef.current = LipSync.getInstance();
-    lipSyncRef.current.init({
-      wasmPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.wasm',
-      dataPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.data',
-      jsPath: 'https://unpkg.com/lip-sync-js@latest/dist/wasm/lip-sync.js'
+    // Initialize LipSyncEngine instance
+    lipSyncEngineRef.current = LipSyncEngine.getInstance();
+    lipSyncEngineRef.current.init({
+      wasmPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.wasm',
+      dataPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.data',
+      jsPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.js'
     }).catch(setError);
 
     // Cleanup on unmount
     return () => {
-      lipSyncRef.current?.destroy();
+      lipSyncEngineRef.current?.destroy();
     };
   }, []);
 
   const analyze = useCallback(
-    async (pcm16: Int16Array, options?: LipSyncOptions) => {
-      if (!lipSyncRef.current) {
-        setError(new Error('LipSync not initialized'));
+    async (pcm16: Int16Array, options?: LipSyncEngineOptions) => {
+      if (!lipSyncEngineRef.current) {
+        setError(new Error('LipSyncEngine not initialized'));
         return;
       }
 
@@ -59,7 +59,7 @@ export function useLipSync() {
       setError(null);
 
       try {
-        const result = await lipSyncRef.current.analyzeAsync(pcm16, options);
+        const result = await lipSyncEngineRef.current.analyzeAsync(pcm16, options);
         setResult(result);
       } catch (err) {
         setError(err as Error);

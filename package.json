@@ -1,5 +1,5 @@
 {
-  "name": "lip-sync-js",
+  "name": "lip-sync-engine",
   "version": "1.0.0",
   "description": "🎙️ WebAssembly port of Rhubarb Lip Sync for browser-based lip-sync animation. Analyzes audio to generate precise mouth movements using PocketSphinx speech recognition. Framework-agnostic TypeScript API for React, Vue, Svelte, Next.js, and vanilla JS. Perfect for games, chatbots, and virtual characters.",
   "author": "Santiago Forero",
@@ -26,7 +26,7 @@
       "require": "./dist/index.js"
     },
     "./wasm": {
-      "default": "./dist/wasm/lip-sync.js"
+      "default": "./dist/wasm/lip-sync-engine.js"
     }
   },
   "files": [
@@ -54,10 +54,10 @@
   "sideEffects": false,
   "repository": {
     "type": "git",
-    "url": "https://github.com/biolimbo/lip-sync-js.git"
+    "url": "https://github.com/biolimbo/lip-sync-engine.git"
   },
   "bugs": {
-    "url": "https://github.com/biolimbo/lip-sync-js/issues"
+    "url": "https://github.com/biolimbo/lip-sync-engine/issues"
   },
-  "homepage": "https://github.com/biolimbo/lip-sync-js#readme"
+  "homepage": "https://github.com/biolimbo/lip-sync-engine#readme"
 }

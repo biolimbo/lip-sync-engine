@@ -1,7 +1,7 @@
-import type { LipSyncResult, LipSyncOptions } from './types';
+import type { LipSyncEngineResult, LipSyncEngineOptions } from './types';
 
 /**
- * Web Worker pool for non-blocking lip-sync analysis
+ * Web Worker pool for non-blocking lip-sync-engine analysis
  * This is a simplified implementation - workers are created on demand
  */
 export class WorkerPool {
@@ -24,12 +24,12 @@ export class WorkerPool {
    *
    * @param pcm16 - 16-bit PCM audio buffer
    * @param options - Optional configuration
-   * @returns Promise resolving to lip-sync result
+   * @returns Promise resolving to lip-sync-engine result
    */
   async analyze(
     pcm16: Int16Array,
-    options: LipSyncOptions = {}
-  ): Promise<LipSyncResult> {
+    options: LipSyncEngineOptions = {}
+  ): Promise<LipSyncEngineResult> {
     // For now, just fall back to synchronous analysis
     // Full worker implementation would require:
     // 1. Creating a worker.ts file
@@ -38,8 +38,8 @@ export class WorkerPool {
     // 4. Loading WASM in worker context
 
     // This can be implemented in the future if needed
-    const { LipSync } = await import('./LipSync');
-    const instance = LipSync.getInstance();
+    const { LipSyncEngine } = await import('./LipSyncEngine');
+    const instance = LipSyncEngine.getInstance();
     await instance.init();
     return instance.analyze(pcm16, options);
   }

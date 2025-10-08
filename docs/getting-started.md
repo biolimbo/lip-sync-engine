@@ -1,11 +1,11 @@
-# Getting Started with lip-sync-js
+# Getting Started with lip-sync-engine
 
-This guide will help you get up and running with lip-sync-js in your project.
+This guide will help you get up and running with lip-sync-engine in your project.
 
 ## Installation
 
 ```bash
-npm install lip-sync-js
+npm install lip-sync-engine
 ```
 
 ## Basic Usage
@@ -13,7 +13,7 @@ npm install lip-sync-js
 ### 1. Import the Library
 
 ```typescript
-import { analyze, recordAudio } from 'lip-sync-js';
+import { analyze, recordAudio } from 'lip-sync-engine';
 ```
 
 ### 2. Get Audio Data
@@ -30,7 +30,7 @@ const { pcm16, audioBuffer } = await recordAudio(5000);
 #### Option B: Load from File
 
 ```typescript
-import { loadAudio } from 'lip-sync-js';
+import { loadAudio } from 'lip-sync-engine';
 
 // From file input
 const file = event.target.files[0];
@@ -43,7 +43,7 @@ const { pcm16 } = await loadAudio('https://example.com/audio.mp3');
 #### Option C: Convert Existing AudioBuffer
 
 ```typescript
-import { audioBufferToInt16 } from 'lip-sync-js';
+import { audioBufferToInt16 } from 'lip-sync-engine';
 
 // You already have an AudioBuffer
 const pcm16 = audioBufferToInt16(myAudioBuffer, 16000);
@@ -76,7 +76,7 @@ result.mouthCues.forEach(cue => {
 ## Complete Example
 
 ```typescript
-import { analyze, recordAudio } from 'lip-sync-js';
+import { analyze, recordAudio } from 'lip-sync-engine';
 
 async function analyzeSpeech() {
   try {
@@ -111,23 +111,23 @@ analyzeSpeech();
 
 ```tsx
 import { useState, useEffect, useRef } from 'react';
-import { LipSync, recordAudio } from 'lip-sync-js';
+import { LipSyncEngine, recordAudio } from 'lip-sync-engine';
 
-function LipSyncDemo() {
+function LipSyncEngineDemo() {
   const [result, setResult] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
-  const lipSyncRef = useRef(LipSync.getInstance());
+  const lipSyncEngineRef = useRef(LipSyncEngine.getInstance());
 
   useEffect(() => {
-    lipSyncRef.current.init();
-    return () => lipSyncRef.current.destroy();
+    lipSyncEngineRef.current.init();
+    return () => lipSyncEngineRef.current.destroy();
   }, []);
 
   const handleRecord = async () => {
     setIsRecording(true);
     try {
       const { pcm16 } = await recordAudio(5000);
-      const res = await lipSyncRef.current.analyze(pcm16, {
+      const res = await lipSyncEngineRef.current.analyze(pcm16, {
         dialogText: "Hello world"
       });
       setResult(res);
@@ -154,20 +154,20 @@ See [examples/react](../examples/react) for complete examples.
 ```vue
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
-import { LipSync, recordAudio } from 'lip-sync-js';
+import { LipSyncEngine, recordAudio } from 'lip-sync-engine';
 
 const result = ref(null);
 const isRecording = ref(false);
-const lipSync = LipSync.getInstance();
+const lipSyncEngine = LipSyncEngine.getInstance();
 
-onMounted(() => lipSync.init());
-onUnmounted(() => lipSync.destroy());
+onMounted(() => lipSyncEngine.init());
+onUnmounted(() => lipSyncEngine.destroy());
 
 const handleRecord = async () => {
   isRecording.value = true;
   try {
     const { pcm16 } = await recordAudio(5000);
-    result.value = await lipSync.analyze(pcm16, {
+    result.value = await lipSyncEngine.analyze(pcm16, {
       dialogText: "Hello world"
     });
   } finally {
@@ -193,18 +193,18 @@ See [examples/vue](../examples/vue) for complete examples.
 ```svelte
 <script>
 import { writable } from 'svelte/store';
-import { LipSync, recordAudio } from 'lip-sync-js';
+import { LipSyncEngine, recordAudio } from 'lip-sync-engine';
 
 const result = writable(null);
 const isRecording = writable(false);
-const lipSync = LipSync.getInstance();
-lipSync.init();
+const lipSyncEngine = LipSyncEngine.getInstance();
+lipSyncEngine.init();
 
 async function handleRecord() {
   isRecording.set(true);
   try {
     const { pcm16 } = await recordAudio(5000);
-    const res = await lipSync.analyze(pcm16, {
+    const res = await lipSyncEngine.analyze(pcm16, {
       dialogText: "Hello world"
     });
     result.set(res);
@@ -271,9 +271,9 @@ try {
 When done with the library:
 
 ```typescript
-const lipSync = LipSync.getInstance();
+const lipSyncEngine = LipSyncEngine.getInstance();
 // Use it...
-lipSync.destroy(); // Clean up when completely done
+lipSyncEngine.destroy(); // Clean up when completely done
 ```
 
 ## Common Issues
@@ -287,7 +287,7 @@ lipSync.destroy(); // Clean up when completely done
 ```javascript
 // Vite example (vite.config.js)
 export default {
-  publicDir: 'node_modules/lip-sync-js/dist/wasm'
+  publicDir: 'node_modules/lip-sync-engine/dist/wasm'
 };
 
 // Webpack example (webpack.config.js)

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.13)
-message(STATUS "===== LOADING LIPSYNC-WASM CMakeLists.txt =====")
-project(lipsync-wasm)
+message(STATUS "===== LOADING LIPSYNCENGINE-WASM CMakeLists.txt =====")
+project(lipsyncengine-wasm)
 
 # Require C++17
 set(CMAKE_CXX_STANDARD 17)
@@ -31,7 +31,7 @@ include_directories(
 )
 
 # Collect all source files
-file(GLOB_RECURSE LIPSYNC_SOURCES
+file(GLOB_RECURSE LIPSYNCENGINE_SOURCES
 	"src/cpp/core/*.cpp"
 	"src/cpp/audio/*.cpp"
 	"src/cpp/recognition/*.cpp"
@@ -46,9 +46,9 @@ file(GLOB_RECURSE LIPSYNC_SOURCES
 )
 
 # Exclude g2pRules.cpp - it's included by g2p.cpp, not compiled separately
-list(FILTER LIPSYNC_SOURCES EXCLUDE REGEX ".*g2pRules\\.cpp$")
+list(FILTER LIPSYNCENGINE_SOURCES EXCLUDE REGEX ".*g2pRules\\.cpp$")
 # Exclude NiceCmdLineOutput - CLI-only, requires TCLAP
-list(FILTER LIPSYNC_SOURCES EXCLUDE REGEX ".*NiceCmdLineOutput\\.cpp$")
+list(FILTER LIPSYNCENGINE_SOURCES EXCLUDE REGEX ".*NiceCmdLineOutput\\.cpp$")
 
 # Library sources
 file(GLOB CPPFORMAT_SOURCES "lib/cppformat/*.cc")
@@ -91,8 +91,8 @@ list(FILTER FLITE_LANG_SOURCES EXCLUDE REGEX ".*/cmu_lex_phones_huff_table\\.c$"
 set(FLITE_SOURCES ${FLITE_SOURCES} ${FLITE_LANG_SOURCES})
 
 # Create WASM executable
-add_executable(lip-sync
-	${LIPSYNC_SOURCES}
+add_executable(lip-sync-engine
+	${LIPSYNCENGINE_SOURCES}
 	${CPPFORMAT_SOURCES}
 	${UTF8PROC_SOURCES}
 	${WHEREAMI_SOURCES}
@@ -103,7 +103,7 @@ add_executable(lip-sync
 )
 
 # Compiler flags
-target_compile_options(lip-sync PRIVATE
+target_compile_options(lip-sync-engine PRIVATE
 	-Wall
 	-Wextra
 	-Wno-unused-parameter
@@ -112,16 +112,16 @@ target_compile_options(lip-sync PRIVATE
 )
 
 # Preprocessor definitions
-target_compile_definitions(lip-sync PRIVATE
+target_compile_definitions(lip-sync-engine PRIVATE
 	HAVE_CONFIG_H=1
 	WEBRTC_POSIX=1
 )
 
 # Emscripten linker flags
 if(EMSCRIPTEN)
-	set_target_properties(lip-sync PROPERTIES
+	set_target_properties(lip-sync-engine PROPERTIES
 		LINK_FLAGS "\
-			-sEXPORTED_FUNCTIONS=_lipsync_init,_lipsync_analyze_pcm16,_lipsync_free,_lipsync_get_last_error,_malloc,_free \
+			-sEXPORTED_FUNCTIONS=_lipsyncengine_init,_lipsyncengine_analyze_pcm16,_lipsyncengine_free,_lipsyncengine_get_last_error,_malloc,_free \
 			-sEXPORTED_RUNTIME_METHODS=ccall,cwrap,FS,UTF8ToString,allocateUTF8,stringToUTF8,lengthBytesUTF8,HEAP16 \
 			-sALLOW_MEMORY_GROWTH=1 \
 			-sINITIAL_MEMORY=134217728 \
@@ -129,7 +129,7 @@ if(EMSCRIPTEN)
 			-sFILESYSTEM=1 \
 			-sENVIRONMENT=web,worker \
 			-sMODULARIZE=1 \
-			-sEXPORT_NAME=createLipSyncModule \
+			-sEXPORT_NAME=createLipSyncEngineModule \
 			-fexceptions \
 			-sDISABLE_EXCEPTION_CATCHING=0 \
 			-sASSERTIONS=0 \
@@ -140,7 +140,7 @@ if(EMSCRIPTEN)
 	)
 endif()
 
-# Output directory - outputs lip-sync.js, lip-sync.wasm, lip-sync.data
-set_target_properties(lip-sync PROPERTIES
+# Output directory - outputs lip-sync-engine.js, lip-sync-engine.wasm, lip-sync-engine.data
+set_target_properties(lip-sync-engine PROPERTIES
 	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/dist/wasm"
 )

@@ -7,6 +7,6 @@ export default defineConfig({
     port: 3001,
   },
   optimizeDeps: {
-    exclude: ['lip-sync-js'],
+    exclude: ['lip-sync-engine'],
   },
 });

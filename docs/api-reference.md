@@ -1,19 +1,19 @@
 # API Reference
 
-Complete API documentation for lip-sync-js.
+Complete API documentation for lip-sync-engine.
 
 ## Core Classes
 
-### LipSync
+### LipSyncEngine
 
 Main singleton class for lip-sync analysis.
 
 ```typescript
-class LipSync {
-  static getInstance(): LipSync
+class LipSyncEngine {
+  static getInstance(): LipSyncEngine
   async init(options?: WasmLoaderOptions): Promise<void>
-  async analyze(pcm16: Int16Array, options?: LipSyncOptions): Promise<LipSyncResult>
-  async analyzeAsync(pcm16: Int16Array, options?: LipSyncOptions): Promise<LipSyncResult>
+  async analyze(pcm16: Int16Array, options?: LipSyncEngineOptions): Promise<LipSyncEngineResult>
+  async analyzeAsync(pcm16: Int16Array, options?: LipSyncEngineOptions): Promise<LipSyncEngineResult>
   destroy(): void
 }
 ```
@@ -22,11 +22,11 @@ class LipSync {
 
 Get the singleton instance.
 
-**Returns:** `LipSync` - The singleton instance
+**Returns:** `LipSyncEngine` - The singleton instance
 
 **Example:**
 ```typescript
-const lipSync = LipSync.getInstance();
+const lipSyncEngine = LipSyncEngine.getInstance();
 ```
 
 #### `init(options?)`
@@ -40,13 +40,13 @@ Initialize the WASM module. Must be called before analysis.
 
 **Example:**
 ```typescript
-await lipSync.init();
+await lipSyncEngine.init();
 
 // Or with custom paths
-await lipSync.init({
-  wasmPath: '/custom/path/lip-sync.wasm',
-  dataPath: '/custom/path/lip-sync.data',
-  jsPath: '/custom/path/lip-sync.js'
+await lipSyncEngine.init({
+  wasmPath: '/custom/path/lip-sync-engine.wasm',
+  dataPath: '/custom/path/lip-sync-engine.data',
+  jsPath: '/custom/path/lip-sync-engine.js'
 });
 ```
 
@@ -56,9 +56,9 @@ Analyze audio and generate lip-sync data (blocking).
 
 **Parameters:**
 - `pcm16: Int16Array` - 16-bit PCM audio buffer (mono)
-- `options?: LipSyncOptions` - Analysis options
+- `options?: LipSyncEngineOptions` - Analysis options
 
-**Returns:** `Promise<LipSyncResult>`
+**Returns:** `Promise<LipSyncEngineResult>`
 
 **Throws:**
 - `TypeError` - If pcm16 is not an Int16Array
@@ -66,7 +66,7 @@ Analyze audio and generate lip-sync data (blocking).
 
 **Example:**
 ```typescript
-const result = await lipSync.analyze(pcm16, {
+const result = await lipSyncEngine.analyze(pcm16, {
   dialogText: "Hello world",
   sampleRate: 16000
 });
@@ -78,13 +78,13 @@ Analyze audio using Web Worker (non-blocking).
 
 **Parameters:**
 - `pcm16: Int16Array` - 16-bit PCM audio buffer (mono)
-- `options?: LipSyncOptions` - Analysis options
+- `options?: LipSyncEngineOptions` - Analysis options
 
-**Returns:** `Promise<LipSyncResult>`
+**Returns:** `Promise<LipSyncEngineResult>`
 
 **Example:**
 ```typescript
-const result = await lipSync.analyzeAsync(pcm16, {
+const result = await lipSyncEngine.analyzeAsync(pcm16, {
   dialogText: "Hello world"
 });
 ```
@@ -95,7 +95,7 @@ Clean up resources and destroy the instance.
 
 **Example:**
 ```typescript
-lipSync.destroy();
+lipSyncEngine.destroy();
 ```
 
 ## Convenience Functions
@@ -106,13 +106,13 @@ One-off analysis without managing instance.
 
 **Parameters:**
 - `pcm16: Int16Array` - 16-bit PCM audio buffer
-- `options?: LipSyncOptions` - Analysis options
+- `options?: LipSyncEngineOptions` - Analysis options
 
-**Returns:** `Promise<LipSyncResult>`
+**Returns:** `Promise<LipSyncEngineResult>`
 
 **Example:**
 ```typescript
-import { analyze } from 'lip-sync-js';
+import { analyze } from 'lip-sync-engine';
 
 const result = await analyze(pcm16, {
   dialogText: "Hello world",
@@ -126,13 +126,13 @@ One-off async analysis with Web Worker.
 
 **Parameters:**
 - `pcm16: Int16Array` - 16-bit PCM audio buffer
-- `options?: LipSyncOptions` - Analysis options
+- `options?: LipSyncEngineOptions` - Analysis options
 
-**Returns:** `Promise<LipSyncResult>`
+**Returns:** `Promise<LipSyncEngineResult>`
 
 **Example:**
 ```typescript
-import { analyzeAsync } from 'lip-sync-js';
+import { analyzeAsync } from 'lip-sync-engine';
 
 const result = await analyzeAsync(pcm16, {
   dialogText: "Hello world"
@@ -153,7 +153,7 @@ Record audio from microphone.
 
 **Example:**
 ```typescript
-import { recordAudio } from 'lip-sync-js';
+import { recordAudio } from 'lip-sync-engine';
 
 // Record 5 seconds
 const { pcm16, audioBuffer } = await recordAudio(5000);
@@ -171,7 +171,7 @@ Load audio from URL or File.
 
 **Example:**
 ```typescript
-import { loadAudio } from 'lip-sync-js';
+import { loadAudio } from 'lip-sync-engine';
 
 // From URL
 const { pcm16 } = await loadAudio('https://example.com/audio.mp3');
@@ -193,7 +193,7 @@ Convert AudioBuffer to Int16Array PCM.
 
 **Example:**
 ```typescript
-import { audioBufferToInt16 } from 'lip-sync-js';
+import { audioBufferToInt16 } from 'lip-sync-engine';
 
 const pcm16 = audioBufferToInt16(audioBuffer, 16000);
 ```
@@ -209,7 +209,7 @@ Convert Float32Array to Int16Array PCM.
 
 **Example:**
 ```typescript
-import { float32ToInt16 } from 'lip-sync-js';
+import { float32ToInt16 } from 'lip-sync-engine';
 
 const int16 = float32ToInt16(float32Data);
 ```
@@ -227,7 +227,7 @@ Resample audio to different sample rate.
 
 **Example:**
 ```typescript
-import { resample } from 'lip-sync-js';
+import { resample } from 'lip-sync-engine';
 
 const resampled = resample(float32Data, 44100, 16000);
 ```
@@ -246,12 +246,12 @@ interface MouthCue {
 }
 ```
 
-### `LipSyncResult`
+### `LipSyncEngineResult`
 
 Result of lip-sync analysis.
 
 ```typescript
-interface LipSyncResult {
+interface LipSyncEngineResult {
   mouthCues: MouthCue[];
   metadata?: {
     duration: number;      // Total duration in seconds
@@ -261,12 +261,12 @@ interface LipSyncResult {
 }
 ```
 
-### `LipSyncOptions`
+### `LipSyncEngineOptions`
 
 Options for lip-sync analysis.
 
 ```typescript
-interface LipSyncOptions {
+interface LipSyncEngineOptions {
   dialogText?: string;  // Optional dialog text for better accuracy
   sampleRate?: number;  // Sample rate (default: 16000, recommended: 16000)
 }
@@ -325,14 +325,14 @@ const result = await analyze(pcm16);
 Clean up when done:
 
 ```typescript
-const lipSync = LipSync.getInstance();
-await lipSync.init();
+const lipSyncEngine = LipSyncEngine.getInstance();
+await lipSyncEngine.init();
 
 // Use it...
-const result = await lipSync.analyze(pcm16);
+const result = await lipSyncEngine.analyze(pcm16);
 
 // Clean up when completely done
-lipSync.destroy();
+lipSyncEngine.destroy();
 ```
 
 ### Async vs Sync
@@ -341,8 +341,8 @@ Use `analyzeAsync()` for long audio to avoid blocking UI:
 
 ```typescript
 // For short audio (< 5 seconds)
-const result = await lipSync.analyze(pcm16);
+const result = await lipSyncEngine.analyze(pcm16);
 
 // For long audio (> 5 seconds) - doesn't block UI
-const result = await lipSync.analyzeAsync(pcm16);
+const result = await lipSyncEngine.analyzeAsync(pcm16);
 ```

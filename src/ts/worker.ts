@@ -1,5 +1,5 @@
 /**
- * Web Worker for lip-sync analysis
+ * Web Worker for lip-sync-engine analysis
  * This file would be bundled separately and run in a Worker context
  *
  * Note: Full implementation requires separate bundling configuration
