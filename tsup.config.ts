@@ -4,7 +4,7 @@ export default defineConfig({
   entry: ['src/ts/index.ts'],
   format: ['cjs', 'esm'],
   dts: true,
-  clean: true,
+  clean: false, // Don't clean - preserves WASM files from build:wasm
   sourcemap: true,
   splitting: false,
   minify: true,
