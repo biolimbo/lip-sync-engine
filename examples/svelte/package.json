@@ -19,6 +19,6 @@
     "vite": "^5.3.1"
   },
   "dependencies": {
-    "lip-sync-engine": "^1.0.1"
+    "lip-sync-engine": "^1.0.0"
   }
 }

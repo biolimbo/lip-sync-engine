@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "vue": "^3.4.31",
-    "lip-sync-engine": "^1.0.1"
+    "lip-sync-engine": "^1.0.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.5",
