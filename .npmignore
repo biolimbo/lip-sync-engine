@@ -1,0 +1,39 @@
+# Source files (only ship dist/)
+src/
+examples/
+docs/
+scripts/
+
+# Build configuration
+tsconfig.json
+tsup.config.ts
+CMakeLists.txt
+
+# Development files
+.gitignore
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Tests
+tests/
+*.test.ts
+*.spec.ts
+
+# Documentation (keep only README)
+ENHANCEMENT_PLAN.md
+CLAUDE.md
+
+# Build artifacts
+build/
+node_modules/
+*.log
+
+# Keep these
+!dist/
+!README.md
+!LICENSE
+!package.json

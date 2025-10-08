@@ -1,0 +1,63 @@
+{
+  "name": "lip-sync-js",
+  "version": "1.0.0",
+  "description": "🎙️ WebAssembly port of Rhubarb Lip Sync for browser-based lip-sync animation. Analyzes audio to generate precise mouth movements using PocketSphinx speech recognition. Framework-agnostic TypeScript API for React, Vue, Svelte, Next.js, and vanilla JS. Perfect for games, chatbots, and virtual characters.",
+  "author": "Santiago Forero",
+  "license": "MIT",
+  "keywords": [
+    "lip-sync",
+    "speech-recognition",
+    "animation",
+    "wasm",
+    "webassembly",
+    "typescript",
+    "rhubarb",
+    "visemes",
+    "phonemes",
+    "framework-agnostic"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./wasm": {
+      "default": "./dist/wasm/lip-sync.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build:wasm": "./scripts/build-wasm.sh",
+    "build:ts": "tsup",
+    "build": "npm run build:wasm && npm run build:ts",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist build",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsup": "^8.0.1",
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.4"
+  },
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/biolimbo/lip-sync-js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/biolimbo/lip-sync-js/issues"
+  },
+  "homepage": "https://github.com/biolimbo/lip-sync-js#readme"
+}
