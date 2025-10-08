@@ -54,7 +54,7 @@
   "sideEffects": false,
   "repository": {
     "type": "git",
-    "url": "https://github.com/biolimbo/lip-sync-engine.git"
+    "url": "git+https://github.com/biolimbo/lip-sync-engine.git"
   },
   "bugs": {
     "url": "https://github.com/biolimbo/lip-sync-engine/issues"
