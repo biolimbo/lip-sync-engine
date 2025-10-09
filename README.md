@@ -310,10 +310,3 @@ MIT License - see [LICENSE](./LICENSE)
 ## 🐛 Issues
 
 Report issues at [https://github.com/biolimbo/lip-sync-engine/issues](https://github.com/biolimbo/lip-sync-engine/issues)
-
-## ✅ What's New
-
-- **Recording Duration Control** - Examples now include adjustable recording duration (5-60 seconds)
-- **Worker Pool Warmup** - Pre-initialize all workers for optimal chunked performance
-- **Mode-Based Initialization** - Single thread, web worker, and chunked workers modes
-- **Enhanced Examples** - All framework examples include performance metrics and visual feedback
