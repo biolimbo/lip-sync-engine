@@ -2,9 +2,32 @@
 
 Complete guide for integrating lip-sync-engine Web Workers in Vite projects.
 
-## Quick Setup
+## ⚡ Quick Start (Recommended - No Configuration Needed!)
 
-Vite has excellent built-in Web Worker support. Minimal configuration required!
+**Since v1.0.2**, the library automatically loads WASM files from unpkg CDN. No bundler configuration required!
+
+```bash
+npm install lip-sync-engine
+```
+
+```typescript
+import { LipSyncEngine } from 'lip-sync-engine';
+
+const engine = LipSyncEngine.getInstance();
+// That's it! WASM files load automatically from CDN
+await engine.init();
+```
+
+The library uses these CDN URLs by default:
+- `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.wasm`
+- `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.data`
+- `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.js`
+
+---
+
+## 🔧 Self-Hosting WASM Files (Optional)
+
+If you need to self-host WASM files (for offline support, corporate proxies, or custom CDNs), follow this setup:
 
 ### 1. Install Package
 

@@ -59,11 +59,8 @@ export function useLipSyncEngine() {
         if (mode === 'single') {
           console.log('Initializing LipSyncEngine (single thread)...');
           lipSyncEngineRef.current = LipSyncEngine.getInstance();
-          await lipSyncEngineRef.current.init({
-            wasmPath: new URL('lip-sync-engine/dist/wasm/lip-sync-engine.wasm', import.meta.url).href,
-            dataPath: new URL('lip-sync-engine/dist/wasm/lip-sync-engine.data', import.meta.url).href,
-            jsPath: new URL('lip-sync-engine/dist/wasm/lip-sync-engine.js', import.meta.url).href
-          });
+          // No options needed - uses CDN by default
+          await lipSyncEngineRef.current.init();
           console.log('LipSyncEngine initialized');
         } else {
           // Initialize WorkerPool for worker and chunked modes
@@ -71,22 +68,14 @@ export function useLipSyncEngine() {
 
           if (mode === 'worker') {
             console.log('Initializing WorkerPool (single worker mode)...');
-            await workerPoolRef.current.init({
-              wasmPath: new URL('lip-sync-engine/dist/wasm/lip-sync-engine.wasm', import.meta.url).href,
-              dataPath: new URL('lip-sync-engine/dist/wasm/lip-sync-engine.data', import.meta.url).href,
-              jsPath: new URL('lip-sync-engine/dist/wasm/lip-sync-engine.js', import.meta.url).href,
-              workerScriptUrl: new URL('lip-sync-engine/dist/worker.js', import.meta.url).href
-            });
+            // No options needed - uses CDN by default
+            await workerPoolRef.current.init();
             console.log('✅ WorkerPool ready (1 worker)');
           } else {
             // Chunked or Streaming mode
             console.log(`Initializing WorkerPool (${mode} mode)...`);
-            await workerPoolRef.current.init({
-              wasmPath: new URL('lip-sync-engine/dist/wasm/lip-sync-engine.wasm', import.meta.url).href,
-              dataPath: new URL('lip-sync-engine/dist/wasm/lip-sync-engine.data', import.meta.url).href,
-              jsPath: new URL('lip-sync-engine/dist/wasm/lip-sync-engine.js', import.meta.url).href,
-              workerScriptUrl: new URL('lip-sync-engine/dist/worker.js', import.meta.url).href
-            });
+            // No options needed - uses CDN by default
+            await workerPoolRef.current.init();
             console.log('Creating worker pool...');
             await workerPoolRef.current.warmup();
             console.log(`✅ WorkerPool ready (${workerPoolRef.current.getStats().totalWorkers} workers)`);

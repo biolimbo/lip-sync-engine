@@ -1,4 +1,5 @@
 import type { LipSyncEngineModule, WasmLoaderOptions } from './types';
+import packageJson from '../../package.json';
 
 // Declare worker globals for TypeScript
 declare const WorkerGlobalScope: any;
@@ -56,10 +57,11 @@ export class WasmLoader {
   private static async _loadModuleImpl(
     options: WasmLoaderOptions
   ): Promise<LipSyncEngineModule> {
+    const version = packageJson.version;
     const {
-      wasmPath = '/dist/wasm/lip-sync-engine.wasm',
-      dataPath = '/dist/wasm/lip-sync-engine.data',
-      jsPath = '/dist/wasm/lip-sync-engine.js',
+      wasmPath = `https://unpkg.com/lip-sync-engine@${version}/dist/wasm/lip-sync-engine.wasm`,
+      dataPath = `https://unpkg.com/lip-sync-engine@${version}/dist/wasm/lip-sync-engine.data`,
+      jsPath = `https://unpkg.com/lip-sync-engine@${version}/dist/wasm/lip-sync-engine.js`,
     } = options;
 
     // Detect if we're in a worker context

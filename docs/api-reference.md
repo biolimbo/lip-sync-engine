@@ -34,21 +34,27 @@ const lipSyncEngine = LipSyncEngine.getInstance();
 Initialize the WASM module. Must be called before analysis.
 
 **Parameters:**
-- `options?: WasmLoaderOptions` - Optional WASM file paths
+- `options?: WasmLoaderOptions` - Optional WASM file paths (defaults to unpkg CDN)
 
 **Returns:** `Promise<void>`
 
 **Example:**
 ```typescript
+// Use default CDN paths (recommended)
 await lipSyncEngine.init();
 
-// Or with custom paths
+// Or with custom self-hosted paths
 await lipSyncEngine.init({
   wasmPath: '/custom/path/lip-sync-engine.wasm',
   dataPath: '/custom/path/lip-sync-engine.data',
   jsPath: '/custom/path/lip-sync-engine.js'
 });
 ```
+
+**Default CDN URLs:**
+- `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.wasm`
+- `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.data`
+- `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.js`
 
 #### `analyze(pcm16, options?)`
 
@@ -144,7 +150,7 @@ const pool = WorkerPool.getInstance(4, '/custom/worker.js');
 Initialize the worker pool. Must be called before analysis.
 
 **Parameters:**
-- `options?: WorkerPoolInitOptions` - Worker initialization options
+- `options?: WorkerPoolInitOptions` - Worker initialization options (defaults to unpkg CDN)
   - `wasmPath?: string` - Path to WASM file
   - `dataPath?: string` - Path to data file
   - `jsPath?: string` - Path to JS loader file
@@ -154,6 +160,10 @@ Initialize the worker pool. Must be called before analysis.
 
 **Example:**
 ```typescript
+// Use default CDN paths (recommended)
+await pool.init();
+
+// Or with custom self-hosted paths
 await pool.init({
   wasmPath: '/dist/wasm/lip-sync-engine.wasm',
   dataPath: '/dist/wasm/lip-sync-engine.data',
@@ -161,6 +171,12 @@ await pool.init({
   workerScriptUrl: '/dist/worker.js'
 });
 ```
+
+**Default CDN URLs:**
+- WASM: `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.wasm`
+- Data: `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.data`
+- JS: `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.js`
+- Worker: `https://unpkg.com/lip-sync-engine@1.0.2/dist/worker.js`
 
 #### `warmup()`
 

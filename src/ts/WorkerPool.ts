@@ -1,5 +1,6 @@
 import type { LipSyncEngineResult, LipSyncEngineOptions } from './types';
 import type { WorkerRequest, WorkerResponse } from './worker';
+import packageJson from '../../package.json';
 
 /**
  * Represents a worker in the pool
@@ -47,14 +48,16 @@ export class WorkerPool {
   ) {
     this.maxWorkers = Math.max(1, maxWorkers);
 
-    // Default worker script URL - can be overridden
-    this.workerScriptUrl = workerScriptUrl || '/dist/worker.js';
+    const version = packageJson.version;
 
-    // Default WASM paths - can be configured via init()
+    // Default worker script URL - uses CDN, can be overridden
+    this.workerScriptUrl = workerScriptUrl || `https://unpkg.com/lip-sync-engine@${version}/dist/worker.js`;
+
+    // Default WASM paths - uses CDN, can be configured via init()
     this.wasmPaths = {
-      wasmPath: '/dist/wasm/lip-sync-engine.wasm',
-      dataPath: '/dist/wasm/lip-sync-engine.data',
-      jsPath: '/dist/wasm/lip-sync-engine.js'
+      wasmPath: `https://unpkg.com/lip-sync-engine@${version}/dist/wasm/lip-sync-engine.wasm`,
+      dataPath: `https://unpkg.com/lip-sync-engine@${version}/dist/wasm/lip-sync-engine.data`,
+      jsPath: `https://unpkg.com/lip-sync-engine@${version}/dist/wasm/lip-sync-engine.js`
     };
   }
 

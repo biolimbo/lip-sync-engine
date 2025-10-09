@@ -90,11 +90,8 @@ function createLipSyncEngineStore() {
         // Initialize LipSyncEngine for single thread mode
         console.log('Initializing LipSyncEngine (single thread)...');
         lipSyncEngine = LipSyncEngine.getInstance();
-        await lipSyncEngine.init({
-          wasmPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.wasm',
-          dataPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.data',
-          jsPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.js'
-        });
+        // No options needed - uses CDN by default
+        await lipSyncEngine.init();
         console.log('LipSyncEngine initialized');
       } else {
         // Initialize WorkerPool for worker and chunked modes
@@ -102,22 +99,14 @@ function createLipSyncEngineStore() {
 
         if (mode === 'worker') {
           console.log('Initializing WorkerPool (single worker mode)...');
-          await workerPool.init({
-            wasmPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.wasm',
-            dataPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.data',
-            jsPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.js',
-            workerScriptUrl: 'https://unpkg.com/lip-sync-engine@latest/dist/worker.js'
-          });
+          // No options needed - uses CDN by default
+          await workerPool.init();
           console.log('✅ WorkerPool ready (1 worker)');
         } else {
           // Chunked or Streaming mode
-          console.log(`Initializing WorkerPool (${currentMode} mode)...`);
-          await workerPool.init({
-            wasmPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.wasm',
-            dataPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.data',
-            jsPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.js',
-            workerScriptUrl: 'https://unpkg.com/lip-sync-engine@latest/dist/worker.js'
-          });
+          console.log(`Initializing WorkerPool (${mode} mode)...`);
+          // No options needed - uses CDN by default
+          await workerPool.init();
           console.log('Creating worker pool...');
           await workerPool.warmup();
           console.log(`✅ WorkerPool ready (${workerPool.getStats().totalWorkers} workers)`);

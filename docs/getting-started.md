@@ -282,26 +282,23 @@ lipSyncEngine.destroy(); // Clean up when completely done
 
 **Problem:** WASM files not found
 
-**Solution:** Make sure WASM files are served from your web server:
+**Solution:** The library automatically loads WASM files from unpkg CDN by default (no configuration needed). If you need to self-host the WASM files, you can specify custom paths:
 
 ```javascript
-// Vite example (vite.config.js)
-export default {
-  publicDir: 'node_modules/lip-sync-engine/dist/wasm'
-};
+import { LipSyncEngine } from 'lip-sync-engine';
 
-// Webpack example (webpack.config.js)
-module.exports = {
-  module: {
-    rules: [
-      {
-        test: /\.(wasm|data)$/,
-        type: 'asset/resource'
-      }
-    ]
-  }
-};
+const engine = LipSyncEngine.getInstance();
+await engine.init({
+  wasmPath: '/custom/path/lip-sync-engine.wasm',
+  dataPath: '/custom/path/lip-sync-engine.data',
+  jsPath: '/custom/path/lip-sync-engine.js'
+});
 ```
+
+By default (with no options), the library uses:
+- `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.wasm`
+- `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.data`
+- `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.js`
 
 ### Microphone Permission Denied
 

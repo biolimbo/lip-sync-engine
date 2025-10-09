@@ -553,22 +553,15 @@
         // Initialize main thread engine (for single mode)
         console.log('Initializing LipSyncEngine...');
         lipSyncEngine = LipSyncEngine.getInstance();
-        await lipSyncEngine.init({
-          wasmPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.wasm',
-          dataPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.data',
-          jsPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.js'
-        });
+        // No options needed - uses CDN by default
+        await lipSyncEngine.init();
         console.log('LipSyncEngine ready');
 
         // Initialize worker pool (for worker and chunked modes)
         console.log('Initializing WorkerPool...');
         workerPool = WorkerPool.getInstance();
-        await workerPool.init({
-          wasmPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.wasm',
-          dataPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.data',
-          jsPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.js',
-          workerScriptUrl: 'https://unpkg.com/lip-sync-engine@latest/dist/worker.js'
-        });
+        // No options needed - uses CDN by default
+        await workerPool.init();
         console.log('WorkerPool ready (1 worker created)');
         console.log('Note: Additional workers will be created on-demand for chunked mode');
 

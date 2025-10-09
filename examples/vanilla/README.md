@@ -156,4 +156,4 @@ All logs include timestamps in 12-hour format.
 2. **Audio Quality**: Clear audio with minimal background noise works best
 3. **Browser Permissions**: Grant microphone access when prompted
 4. **File Formats**: Supports MP3, WAV, OGG, and other browser-supported formats
-5. **CDN Versions**: For production, pin to a specific version (e.g., `@1.0.0`) instead of `@latest`
+5. **CDN Versions**: For production, pin to a specific version (e.g., `@1.0.2`) instead of `@latest`
