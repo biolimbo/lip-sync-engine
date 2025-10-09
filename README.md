@@ -165,15 +165,15 @@ LipSyncEngine.js generates 9 mouth shapes based on Preston Blair's phoneme categ
 
 | Shape | Image | Description | Example Sounds |
 |-------|-------|-------------|----------------|
-| X | <img src="examples/assets/visemes/X.png" width="60"> | Closed/Rest | Silence |
-| A | <img src="examples/assets/visemes/A.png" width="60"> | Open | ah, aa, aw |
-| B | <img src="examples/assets/visemes/B.png" width="60"> | Lips together | p, b, m |
-| C | <img src="examples/assets/visemes/C.png" width="60"> | Rounded | sh, ch, zh |
-| D | <img src="examples/assets/visemes/D.png" width="60"> | Tongue-teeth | th, dh, t, d, n, l |
-| E | <img src="examples/assets/visemes/E.png" width="60"> | Slightly open | eh, ae, uh |
-| F | <img src="examples/assets/visemes/F.png" width="60"> | F/V sound | f, v |
-| G | <img src="examples/assets/visemes/G.png" width="60"> | Open back | k, g, ng |
-| H | <img src="examples/assets/visemes/H.png" width="60"> | Wide open | ee, ih, ey |
+| X | <img src="examples/assets/visemes/X.png" width="100"> | Closed/Rest | Silence |
+| A | <img src="examples/assets/visemes/A.png" width="100"> | Open | ah, aa, aw |
+| B | <img src="examples/assets/visemes/B.png" width="100"> | Lips together | p, b, m |
+| C | <img src="examples/assets/visemes/C.png" width="100"> | Rounded | sh, ch, zh |
+| D | <img src="examples/assets/visemes/D.png" width="100"> | Tongue-teeth | th, dh, t, d, n, l |
+| E | <img src="examples/assets/visemes/E.png" width="100"> | Slightly open | eh, ae, uh |
+| F | <img src="examples/assets/visemes/F.png" width="100"> | F/V sound | f, v |
+| G | <img src="examples/assets/visemes/G.png" width="100"> | Open back | k, g, ng |
+| H | <img src="examples/assets/visemes/H.png" width="100"> | Wide open | ee, ih, ey |
 
 ## 🔬 How It Works
 
