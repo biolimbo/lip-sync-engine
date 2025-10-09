@@ -31,20 +31,16 @@ npm run dev
 
 Then open http://localhost:3000
 
-## WASM Files via CDN
+## WASM Files via CDN (Default)
 
-This example uses unpkg.com CDN to load WASM files - **this is the recommended approach for end users** as it requires no additional configuration or file copying.
+**No configuration needed!** WASM files are automatically loaded from unpkg.com CDN. Just call `init()` with no parameters:
 
-The initialization uses CDN URLs:
 ```typescript
-await lipSyncEngine.init({
-  wasmPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.wasm',
-  dataPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.data',
-  jsPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.js'
-});
+await lipSyncEngine.init(); // That's it!
 ```
 
-For production, pin to a specific version:
+The library automatically uses the correct version from the package. For production, you can optionally pin to a specific version:
+
 ```typescript
 await lipSyncEngine.init({
   wasmPath: 'https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.wasm',
@@ -52,6 +48,8 @@ await lipSyncEngine.init({
   jsPath: 'https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.js'
 });
 ```
+
+**Works with all bundlers** - Vite, Webpack, Rollup, esbuild, etc. No special bundler configuration required!
 
 ## Project Structure
 

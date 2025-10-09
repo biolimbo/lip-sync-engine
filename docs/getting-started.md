@@ -296,9 +296,9 @@ await engine.init({
 ```
 
 By default (with no options), the library uses:
-- `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.wasm`
-- `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.data`
-- `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.js`
+- `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.wasm`
+- `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.data`
+- `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.js`
 
 ### Microphone Permission Denied
 

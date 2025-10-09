@@ -62,6 +62,7 @@ function useLipSyncEngine() {
   const lipSyncEngineRef = useRef(LipSyncEngine.getInstance());
 
   useEffect(() => {
+    // Loads WASM from CDN automatically
     lipSyncEngineRef.current.init();
     return () => lipSyncEngineRef.current.destroy();
   }, []);
@@ -103,6 +104,7 @@ import { LipSyncEngine, recordAudio } from 'lip-sync-engine';
 const result = ref(null);
 const lipSyncEngine = LipSyncEngine.getInstance();
 
+// Loads WASM from CDN automatically
 onMounted(() => lipSyncEngine.init());
 onUnmounted(() => lipSyncEngine.destroy());
 
@@ -131,6 +133,8 @@ import { LipSyncEngine, recordAudio } from 'lip-sync-engine';
 
 const result = writable(null);
 const lipSyncEngine = LipSyncEngine.getInstance();
+
+// Loads WASM from CDN automatically
 lipSyncEngine.init();
 
 async function handleRecord() {
@@ -148,16 +152,30 @@ async function handleRecord() {
 
 See [examples/svelte](./examples/svelte) for complete example.
 
-## 📚 Documentation
+## 🌐 WASM Loading
 
-- [Getting Started](./docs/getting-started.md)
-- [API Reference](./docs/api-reference.md)
-- [Streaming Analysis Guide](./docs/streaming-analysis.md) - Real-time chunk processing
-- Framework Examples:
-  - [Vanilla JS](./examples/vanilla/README.md)
-  - [React](./examples/react/README.md)
-  - [Vue](./examples/vue/README.md)
-  - [Svelte](./examples/svelte/README.md)
+**CDN by default** - No bundler configuration needed! WASM files are automatically loaded from unpkg.com CDN. This works out of the box with all bundlers (Vite, Webpack, Rollup, etc.).
+
+```typescript
+// Just call init() - that's it!
+await lipSyncEngine.init();
+
+// Or pin to a specific version for production:
+await lipSyncEngine.init({
+  wasmPath: 'https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.wasm',
+  dataPath: 'https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.data',
+  jsPath: 'https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.js'
+});
+```
+
+For self-hosting WASM files, copy `node_modules/lip-sync-engine/dist/wasm/*` to your public directory and provide custom paths.
+
+## 📚 Examples
+
+- [Vanilla JS](./examples/vanilla/README.md)
+- [React](./examples/react/README.md)
+- [Vue](./examples/vue/README.md)
+- [Svelte](./examples/svelte/README.md)
 
 ## 🎨 Mouth Shapes (Visemes)
 
@@ -208,7 +226,7 @@ const result = await lipSyncEngine.analyze(pcm16, options);
 import { WorkerPool } from 'lip-sync-engine';
 
 const pool = WorkerPool.getInstance(4);
-await pool.init({ /* paths */ });
+await pool.init(); // Loads worker from CDN automatically
 await pool.warmup(); // Pre-create workers
 
 // Create streaming analyzer

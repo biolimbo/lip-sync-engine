@@ -52,9 +52,9 @@ await lipSyncEngine.init({
 ```
 
 **Default CDN URLs:**
-- `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.wasm`
-- `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.data`
-- `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.js`
+- `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.wasm`
+- `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.data`
+- `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.js`
 
 #### `analyze(pcm16, options?)`
 
@@ -173,10 +173,10 @@ await pool.init({
 ```
 
 **Default CDN URLs:**
-- WASM: `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.wasm`
-- Data: `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.data`
-- JS: `https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.js`
-- Worker: `https://unpkg.com/lip-sync-engine@1.0.2/dist/worker.js`
+- WASM: `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.wasm`
+- Data: `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.data`
+- JS: `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.js`
+- Worker: `https://unpkg.com/lip-sync-engine@1.0.3/dist/worker.js`
 
 #### `warmup()`
 

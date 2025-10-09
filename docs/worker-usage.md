@@ -551,8 +551,8 @@ async function analyzeWithFallback(pcm16: Int16Array) {
 
 - [API Reference](./api-reference.md) - Complete API documentation
 - [Getting Started](./getting-started.md) - Basic usage guide
-- [Bundler Guides](./bundler-guides/) - Framework-specific setup
+- [Streaming Analysis](./streaming-analysis.md) - Real-time chunk processing
 
 ---
 
-**Next Steps:** Check out [bundler integration guides](./bundler-guides/) for framework-specific configuration.
+**Works with all bundlers** - Vite, Webpack, Rollup, esbuild, etc. No configuration needed, just call `pool.init()` and you're ready to go!
