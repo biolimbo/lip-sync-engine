@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { recordAudio, loadAudio } from 'lip-sync-engine';
   import { lipSyncEngineStore } from './stores/lipSyncEngine';
+  import type { ExecutionMode } from './stores/lipSyncEngine';
 
   interface LogEntry {
     message: string;
@@ -46,7 +47,9 @@
 
   onMount(() => {
     addLog('Initializing LipSyncEngine WASM module...', 'info');
+    addLog('Initializing WorkerPool...', 'info');
     addLog('✅ WASM module loaded successfully', 'success');
+    addLog('✅ WorkerPool initialized', 'success');
     addLog('Viseme images preloaded', 'info');
   });
 
@@ -96,9 +99,9 @@
     try {
       addLog('=== Starting Recording ===', 'info');
       addLog('Microphone access granted', 'info');
-      addLog('Recording 5 seconds...', 'info');
+      addLog(`Recording ${$lipSyncEngineStore.recordingDuration} seconds...`, 'info');
 
-      const { pcm16, audioBuffer: buffer } = await recordAudio(5000);
+      const { pcm16, audioBuffer: buffer } = await recordAudio($lipSyncEngineStore.recordingDuration * 1000);
 
       addLog('Recording stopped', 'info');
       const duration = (pcm16.length / 16000).toFixed(2);
@@ -107,6 +110,11 @@
       audioBuffer = buffer;
 
       addLog('=== Starting Analysis ===', 'info');
+
+      const modeDescription = $lipSyncEngineStore.mode === 'single' ? 'Single Thread (blocks UI)' :
+                             $lipSyncEngineStore.mode === 'worker' ? 'Web Worker (non-blocking)' :
+                             'Chunked Workers (parallel)';
+      addLog(`Mode: ${modeDescription}`, 'info');
       addLog(`Analyzing ${pcm16.length} samples (${duration}s at 16kHz)${dialogText ? ' with dialog text' : ''}`, 'info');
 
       await lipSyncEngineStore.analyze(pcm16, {
@@ -142,6 +150,11 @@
       audioBuffer = buffer;
 
       addLog('=== Starting Analysis ===', 'info');
+
+      const modeDescription = $lipSyncEngineStore.mode === 'single' ? 'Single Thread (blocks UI)' :
+                             $lipSyncEngineStore.mode === 'worker' ? 'Web Worker (non-blocking)' :
+                             'Chunked Workers (parallel)';
+      addLog(`Mode: ${modeDescription}`, 'info');
       addLog(`Analyzing ${pcm16.length} samples (${duration}s at 16kHz)${dialogText ? ' with dialog text' : ''}`, 'info');
 
       await lipSyncEngineStore.analyze(pcm16, {
@@ -166,7 +179,12 @@
     }
   }
 
-  $: if ($lipSyncEngineStore.result && audioBuffer && !isPlaying) {
+  function handleModeChange(newMode: ExecutionMode) {
+    lipSyncEngineStore.setMode(newMode);
+    addLog(`Execution mode changed to: ${newMode === 'single' ? 'Single Thread' : newMode === 'worker' ? 'Web Worker' : 'Chunked Workers'}`, 'info');
+  }
+
+  $: if ($lipSyncEngineStore.result && audioBuffer) {
     playAnimation($lipSyncEngineStore.result.mouthCues, audioBuffer);
   }
 </script>
@@ -174,7 +192,79 @@
 <div class="app">
   <div class="container">
     <h1>🎤 LipSyncEngine.js</h1>
-    <p class="subtitle">Svelte Example</p>
+    <p class="subtitle">Svelte Example - All Execution Modes</p>
+
+    <!-- Mode Selector -->
+    <div class="mode-selector">
+      <h3>Execution Mode</h3>
+      <div class="mode-buttons">
+        <button
+          class="mode-btn"
+          class:active={$lipSyncEngineStore.mode === 'single'}
+          on:click={() => handleModeChange('single')}
+          disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
+        >
+          <div class="mode-title">Single Thread</div>
+          <div class="mode-desc">Blocks UI during analysis</div>
+        </button>
+        <button
+          class="mode-btn"
+          class:active={$lipSyncEngineStore.mode === 'worker'}
+          on:click={() => handleModeChange('worker')}
+          disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
+        >
+          <div class="mode-title">Web Worker</div>
+          <div class="mode-desc">Non-blocking, UI stays responsive</div>
+        </button>
+        <button
+          class="mode-btn"
+          class:active={$lipSyncEngineStore.mode === 'chunked'}
+          on:click={() => handleModeChange('chunked')}
+          disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
+        >
+          <div class="mode-title">Chunked Workers</div>
+          <div class="mode-desc">Parallel processing (~5x faster)</div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Recording Duration Slider -->
+    <div class="chunk-settings">
+      <label for="recordingDuration">
+        Recording Duration: {$lipSyncEngineStore.recordingDuration}s
+      </label>
+      <input
+        id="recordingDuration"
+        type="range"
+        min="5"
+        max="60"
+        step="5"
+        value={$lipSyncEngineStore.recordingDuration}
+        on:input={(e) => lipSyncEngineStore.setRecordingDuration(Number(e.currentTarget.value))}
+        disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
+      />
+      <small>Adjust recording duration (5-60 seconds)</small>
+    </div>
+
+    <!-- Chunk Settings - Only visible in chunked mode -->
+    {#if $lipSyncEngineStore.mode === 'chunked'}
+      <div class="chunk-settings">
+        <label for="chunkSize">
+          Chunk Size (seconds): {$lipSyncEngineStore.chunkSize}s
+        </label>
+        <input
+          id="chunkSize"
+          type="range"
+          min="1"
+          max="10"
+          step="1"
+          value={$lipSyncEngineStore.chunkSize}
+          on:input={(e) => lipSyncEngineStore.setChunkSize(Number(e.currentTarget.value))}
+          disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
+        />
+        <small>Smaller chunks = more parallelization, larger chunks = better context</small>
+      </div>
+    {/if}
 
     <div class="input-group">
       <label for="dialogText">Dialog Text (Optional - improves accuracy)</label>
@@ -193,7 +283,7 @@
         disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
         class="btn"
       >
-        {isRecording ? '🎙️ Recording...' : '🎙️ Record Audio (5s)'}
+        {isRecording ? '🎙️ Recording...' : `🎙️ Record Audio (${$lipSyncEngineStore.recordingDuration}s)`}
       </button>
       <label class="btn">
         📁 Load Audio File
@@ -210,6 +300,35 @@
     <div class="status" class:recording={isRecording} class:analyzing={$lipSyncEngineStore.isAnalyzing}>
       {isRecording ? 'Recording... Speak now!' : $lipSyncEngineStore.isAnalyzing ? 'Analyzing audio...' : 'Ready to analyze audio'}
     </div>
+
+    <!-- Performance Metrics -->
+    {#if $lipSyncEngineStore.metrics}
+      <div class="metrics">
+        <h3>Performance Metrics</h3>
+        <div class="metrics-grid">
+          <div class="metric">
+            <div class="metric-label">Execution Time</div>
+            <div class="metric-value">{$lipSyncEngineStore.metrics.executionTime.toFixed(2)}ms</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Mouth Cues</div>
+            <div class="metric-value">{$lipSyncEngineStore.metrics.cuesCount}</div>
+          </div>
+          {#if $lipSyncEngineStore.metrics.workersUsed !== undefined}
+            <div class="metric">
+              <div class="metric-label">Workers Used</div>
+              <div class="metric-value">{$lipSyncEngineStore.metrics.workersUsed}</div>
+            </div>
+          {/if}
+          {#if $lipSyncEngineStore.metrics.chunksProcessed !== undefined}
+            <div class="metric">
+              <div class="metric-label">Chunks Processed</div>
+              <div class="metric-value">{$lipSyncEngineStore.metrics.chunksProcessed}</div>
+            </div>
+          {/if}
+        </div>
+      </div>
+    {/if}
 
     <div class="viseme-display">
       <div>
@@ -312,6 +431,131 @@
     color: #888;
     margin-bottom: 32px;
     font-size: 0.95em;
+  }
+
+  .mode-selector {
+    margin-bottom: 32px;
+  }
+
+  .mode-selector h3 {
+    color: #ffffff;
+    font-size: 1.1em;
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+
+  .mode-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+
+  .mode-btn {
+    background: #0f0f0f;
+    border: 2px solid #2a2a2a;
+    border-radius: 10px;
+    padding: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+  }
+
+  .mode-btn:hover:not(:disabled) {
+    border-color: #4a9eff;
+    background: #1a1a1a;
+    transform: translateY(-2px);
+  }
+
+  .mode-btn.active {
+    border-color: #4a9eff;
+    background: #1a2330;
+  }
+
+  .mode-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .mode-title {
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 15px;
+    margin-bottom: 6px;
+  }
+
+  .mode-desc {
+    color: #888;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .chunk-settings {
+    background: #0f0f0f;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 24px;
+  }
+
+  .chunk-settings label {
+    display: block;
+    color: #b0b0b0;
+    font-weight: 500;
+    margin-bottom: 12px;
+    font-size: 0.9em;
+  }
+
+  .chunk-settings input[type="range"] {
+    width: 100%;
+    margin-bottom: 8px;
+  }
+
+  .chunk-settings small {
+    color: #666;
+    font-size: 12px;
+  }
+
+  .metrics {
+    background: #0f0f0f;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+
+  .metrics h3 {
+    color: #ffffff;
+    font-size: 1.1em;
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 16px;
+  }
+
+  .metric {
+    background: #1a1a1a;
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+  }
+
+  .metric-label {
+    color: #888;
+    font-size: 12px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .metric-value {
+    color: #4a9eff;
+    font-size: 24px;
+    font-weight: 700;
+    font-family: 'SF Mono', Monaco, monospace;
   }
 
   .input-group {

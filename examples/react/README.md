@@ -4,12 +4,18 @@ Complete working React application demonstrating LipSyncEngine.js integration wi
 
 ## Features
 
-- 🎙️ **Record Audio** - Record from microphone (5 seconds)
+- 🎙️ **Record Audio** - Record from microphone with adjustable duration (5-60 seconds)
 - 📁 **Load Audio File** - Load any audio file (MP3, WAV, etc.)
 - 📝 **Dialog Text Input** - Provide optional text for better accuracy
+- ⚡ **Three Execution Modes**:
+  - Single Thread - Traditional blocking mode
+  - Web Worker - Non-blocking with single worker
+  - Chunked Workers - Parallel processing with multiple workers
+- 📊 **Performance Metrics** - View execution time, cue count, and worker usage
+- 🎛️ **Adjustable Settings** - Control recording duration and chunk size
 - 🎭 **Real-time Viseme Display** - Animated mouth shapes synchronized with audio playback
 - ▶️ **Replay Button** - Play back animations on demand
-- 📊 **Results Timeline** - View all detected mouth cues with timestamps
+- 📋 **Results Timeline** - View all detected mouth cues with timestamps
 - 📝 **Timestamped Logs** - Terminal-style logs showing all processing steps
 - 🎨 **Modern Dark Mode UI** - Professional, contemporary interface
 
@@ -77,17 +83,42 @@ import { useLipSyncEngine } from './hooks/useLipSyncEngine';
 import { recordAudio } from 'lip-sync-engine';
 
 function MyComponent() {
-  const { analyze, result, isAnalyzing, error, reset } = useLipSyncEngine();
+  const {
+    analyze,
+    result,
+    isAnalyzing,
+    error,
+    reset,
+    mode,
+    setMode,
+    recordingDuration,
+    setRecordingDuration
+  } = useLipSyncEngine();
 
   const handleRecord = async () => {
-    const { pcm16 } = await recordAudio(5000);
+    const { pcm16 } = await recordAudio(recordingDuration * 1000);
     await analyze(pcm16, { dialogText: "Hello world" });
   };
 
   return (
-    <button onClick={handleRecord} disabled={isAnalyzing}>
-      {isAnalyzing ? 'Analyzing...' : 'Record'}
-    </button>
+    <div>
+      <select value={mode} onChange={(e) => setMode(e.target.value)}>
+        <option value="single">Single Thread</option>
+        <option value="worker">Web Worker</option>
+        <option value="chunked">Chunked Workers</option>
+      </select>
+      <input
+        type="range"
+        min="5"
+        max="60"
+        step="5"
+        value={recordingDuration}
+        onChange={(e) => setRecordingDuration(Number(e.target.value))}
+      />
+      <button onClick={handleRecord} disabled={isAnalyzing}>
+        {isAnalyzing ? 'Analyzing...' : `Record ${recordingDuration}s`}
+      </button>
+    </div>
   );
 }
 ```
@@ -120,13 +151,15 @@ function playAnimation(mouthCues, buffer) {
 
 ### Key Features
 
-1. **Automatic Initialization** - LipSyncEngine initializes on mount with CDN URLs
-2. **Cleanup on Unmount** - Resources are properly freed
-3. **Error Handling** - Comprehensive error states
-4. **TypeScript** - Full type safety
-5. **Async Analysis** - Non-blocking UI with `analyzeAsync()`
-6. **Audio Playback** - Web Audio API integration for synchronized animation
-7. **Timestamped Logging** - Detailed logs with color-coded types
+1. **Mode-Based Initialization** - Different engines initialize based on selected mode
+2. **Worker Pool Warmup** - Pre-initialize workers for chunked mode performance
+3. **Adjustable Recording Duration** - User-controlled recording time (5-60s)
+4. **Performance Metrics** - Track execution time, cues, workers, and chunks
+5. **Cleanup on Unmount** - Resources are properly freed
+6. **Error Handling** - Comprehensive error states
+7. **TypeScript** - Full type safety
+8. **Audio Playback** - Web Audio API integration for synchronized animation
+9. **Timestamped Logging** - Detailed logs with color-coded types
 
 ## Building for Production
 

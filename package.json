@@ -25,9 +25,16 @@
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
     },
+    "./worker": {
+      "import": "./dist/worker.js"
+    },
     "./wasm": {
       "default": "./dist/wasm/lip-sync-engine.js"
-    }
+    },
+    "./dist/wasm/lip-sync-engine.wasm": "./dist/wasm/lip-sync-engine.wasm",
+    "./dist/wasm/lip-sync-engine.data": "./dist/wasm/lip-sync-engine.data",
+    "./dist/wasm/lip-sync-engine.js": "./dist/wasm/lip-sync-engine.js",
+    "./dist/worker.js": "./dist/worker.js"
   },
   "files": [
     "dist",

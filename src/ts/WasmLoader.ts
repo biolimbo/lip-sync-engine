@@ -1,5 +1,9 @@
 import type { LipSyncEngineModule, WasmLoaderOptions } from './types';
 
+// Declare worker globals for TypeScript
+declare const WorkerGlobalScope: any;
+declare function importScripts(...urls: string[]): void;
+
 /**
  * Loads the WASM module
  * This is a singleton loader that handles WASM initialization
@@ -30,9 +34,26 @@ export class WasmLoader {
   }
 
   /**
+   * Load module directly (for worker context)
+   * This method doesn't use singleton caching and is suitable for workers
+   */
+  static async loadModule(options: WasmLoaderOptions = {}): Promise<LipSyncEngineModule> {
+    return this._loadModuleImpl(options);
+  }
+
+  /**
    * Internal method to load the module
    */
   private static async _loadModule(
+    options: WasmLoaderOptions
+  ): Promise<LipSyncEngineModule> {
+    return this._loadModuleImpl(options);
+  }
+
+  /**
+   * Implementation of module loading that works in both window and worker contexts
+   */
+  private static async _loadModuleImpl(
     options: WasmLoaderOptions
   ): Promise<LipSyncEngineModule> {
     const {
@@ -41,27 +62,22 @@ export class WasmLoader {
       jsPath = '/dist/wasm/lip-sync-engine.js',
     } = options;
 
-    // Check if we're in a browser environment
-    if (typeof window === 'undefined') {
-      throw new Error('WasmLoader can only be used in a browser environment');
-    }
+    // Detect if we're in a worker context
+    const isWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
 
-    // Dynamically load the Emscripten-generated JS file
-    // This creates a global function (e.g., createLipSyncEngineModule)
-    return new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = jsPath;
-      script.async = true;
-
-      script.onload = async () => {
+    if (isWorker) {
+      // Worker context - use importScripts
+      return new Promise(async (resolve, reject) => {
         try {
-          // The Emscripten module should expose a factory function
-          // We need to get it from the global scope
-          const createModule = (window as any).createLipSyncEngineModule;
+          // Import the Emscripten JS file
+          importScripts(jsPath);
+
+          // The factory function is now available in global scope
+          const createModule = (self as any).createLipSyncEngineModule;
 
           if (!createModule) {
             throw new Error(
-              'WASM module factory not found. Make sure lip-sync-engine.js is loaded correctly.'
+              'WASM module factory not found in worker. Make sure lip-sync-engine.js exports createLipSyncEngineModule.'
             );
           }
 
@@ -81,14 +97,54 @@ export class WasmLoader {
         } catch (error) {
           reject(error);
         }
-      };
+      });
+    } else {
+      // Window context - use dynamic script loading
+      if (typeof window === 'undefined') {
+        throw new Error('WasmLoader can only be used in browser or worker environments');
+      }
 
-      script.onerror = () => {
-        reject(new Error(`Failed to load WASM module from ${jsPath}`));
-      };
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = jsPath;
+        script.async = true;
 
-      document.head.appendChild(script);
-    });
+        script.onload = async () => {
+          try {
+            // The Emscripten module should expose a factory function
+            const createModule = (window as any).createLipSyncEngineModule;
+
+            if (!createModule) {
+              throw new Error(
+                'WASM module factory not found. Make sure lip-sync-engine.js is loaded correctly.'
+              );
+            }
+
+            const module = await createModule({
+              locateFile: (path: string) => {
+                if (path.endsWith('.wasm')) {
+                  return wasmPath;
+                }
+                if (path.endsWith('.data')) {
+                  return dataPath;
+                }
+                return path;
+              },
+            });
+
+            resolve(module as LipSyncEngineModule);
+          } catch (error) {
+            reject(error);
+          }
+        };
+
+        script.onerror = () => {
+          reject(new Error(`Failed to load WASM module from ${jsPath}`));
+        };
+
+        document.head.appendChild(script);
+      });
+    }
   }
 
   /**

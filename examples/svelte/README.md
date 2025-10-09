@@ -4,12 +4,18 @@ Complete working Svelte application demonstrating LipSyncEngine.js integration w
 
 ## Features
 
-- 🎙️ **Record Audio** - Record from microphone (5 seconds)
+- 🎙️ **Record Audio** - Record from microphone with adjustable duration (5-60 seconds)
 - 📁 **Load Audio File** - Load any audio file (MP3, WAV, etc.)
 - 📝 **Dialog Text Input** - Provide optional text for better accuracy
+- ⚡ **Three Execution Modes**:
+  - Single Thread - Traditional blocking mode
+  - Web Worker - Non-blocking with single worker
+  - Chunked Workers - Parallel processing with multiple workers
+- 📊 **Performance Metrics** - View execution time, cue count, and worker usage
+- 🎛️ **Adjustable Settings** - Control recording duration and chunk size
 - 🎭 **Real-time Viseme Display** - Animated mouth shapes synchronized with audio playback
 - ▶️ **Replay Button** - Play back animations on demand
-- 📊 **Results Timeline** - View all detected mouth cues with timestamps
+- 📋 **Results Timeline** - View all detected mouth cues with timestamps
 - 📝 **Timestamped Logs** - Terminal-style logs showing all processing steps
 - 🎨 **Modern Dark Mode UI** - Professional, contemporary interface
 

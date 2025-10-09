@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LipSyncEngine.js - Vanilla JavaScript (CDN)</title>
+  <title>LipSyncEngine - Vanilla JavaScript Example</title>
   <style>
     * {
       margin: 0;
@@ -12,72 +12,162 @@
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #0f0f0f;
       color: #e0e0e0;
       min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       padding: 20px;
     }
 
     .container {
-      background: #1a1a1a;
-      border-radius: 16px;
-      padding: 40px;
-      max-width: 900px;
-      width: 100%;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-      border: 1px solid #2a2a2a;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 40px;
     }
 
     h1 {
       color: #ffffff;
+      font-size: 2.5em;
       margin-bottom: 8px;
-      font-size: 2em;
-      font-weight: 700;
     }
 
     .subtitle {
       color: #888;
-      margin-bottom: 32px;
-      font-size: 0.95em;
+      font-size: 1em;
+    }
+
+    .mode-selector {
+      background: #1a1a1a;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      border: 1px solid #2a2a2a;
+    }
+
+    .mode-selector h2 {
+      color: #fff;
+      font-size: 1.2em;
+      margin-bottom: 16px;
+    }
+
+    .mode-buttons {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 12px;
+    }
+
+    .mode-btn {
+      background: #0f0f0f;
+      color: #888;
+      border: 2px solid #2a2a2a;
+      padding: 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: left;
+    }
+
+    .mode-btn:hover {
+      border-color: #4a9eff;
+    }
+
+    .mode-btn.active {
+      background: #1a2a3a;
+      border-color: #4a9eff;
+      color: #4a9eff;
+    }
+
+    .mode-title {
+      font-weight: 600;
+      font-size: 1.1em;
+      margin-bottom: 4px;
+    }
+
+    .mode-desc {
+      font-size: 0.85em;
+      opacity: 0.7;
+    }
+
+    .main-content {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 968px) {
+      .main-content {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      background: #1a1a1a;
+      border-radius: 12px;
+      padding: 24px;
+      border: 1px solid #2a2a2a;
+    }
+
+    .panel h2 {
+      color: #fff;
+      font-size: 1.2em;
+      margin-bottom: 16px;
     }
 
     .input-group {
-      margin-bottom: 24px;
+      margin-bottom: 16px;
     }
 
     label {
       display: block;
       color: #b0b0b0;
-      font-weight: 500;
-      margin-bottom: 8px;
       font-size: 0.9em;
+      margin-bottom: 8px;
+      font-weight: 500;
     }
 
-    input[type="text"] {
+    input[type="text"], input[type="number"], input[type="range"] {
       width: 100%;
-      padding: 12px 16px;
+      padding: 12px;
       background: #0f0f0f;
       border: 1px solid #333;
-      border-radius: 8px;
+      border-radius: 6px;
       color: #e0e0e0;
-      font-size: 15px;
-      transition: border-color 0.2s, background 0.2s;
+      font-size: 14px;
     }
 
-    input[type="text"]:focus {
+    input[type="range"] {
+      padding: 0;
+      border: none;
+    }
+
+    input[type="text"]:focus, input[type="number"]:focus {
       outline: none;
       border-color: #4a9eff;
-      background: #141414;
+    }
+
+    .slider-group {
+      margin-bottom: 16px;
+    }
+
+    .slider-group label {
+      margin-bottom: 8px;
+    }
+
+    .slider-group small {
+      color: #666;
+      font-size: 12px;
+      display: block;
+      margin-top: 4px;
     }
 
     .controls {
       display: flex;
-      gap: 12px;
-      margin-bottom: 24px;
+      gap: 8px;
+      margin-bottom: 16px;
       flex-wrap: wrap;
     }
 
@@ -85,23 +175,19 @@
       background: #4a9eff;
       color: white;
       border: none;
-      padding: 12px 24px;
-      border-radius: 8px;
-      font-size: 15px;
+      padding: 12px 20px;
+      border-radius: 6px;
+      font-size: 14px;
       font-weight: 600;
       cursor: pointer;
-      transition: background 0.2s, transform 0.1s;
+      transition: all 0.2s;
       flex: 1;
-      min-width: 140px;
+      min-width: 120px;
     }
 
     button:hover:not(:disabled) {
       background: #3a8eef;
       transform: translateY(-1px);
-    }
-
-    button:active:not(:disabled) {
-      transform: translateY(0);
     }
 
     button:disabled {
@@ -112,19 +198,12 @@
 
     .status {
       background: #0f0f0f;
-      padding: 14px 18px;
-      border-radius: 8px;
-      margin-bottom: 24px;
-      font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+      padding: 12px 16px;
+      border-radius: 6px;
+      margin-bottom: 16px;
       font-size: 13px;
       color: #888;
       border: 1px solid #2a2a2a;
-    }
-
-    .status.recording {
-      background: #2a1a1a;
-      color: #ff6b6b;
-      border-color: #4a2a2a;
     }
 
     .status.analyzing {
@@ -141,21 +220,18 @@
 
     .viseme-display {
       background: #0f0f0f;
-      border-radius: 12px;
-      padding: 40px;
-      margin-bottom: 24px;
+      border-radius: 8px;
+      padding: 32px;
+      margin-bottom: 16px;
       border: 1px solid #2a2a2a;
-      position: relative;
-      min-height: 300px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      text-align: center;
     }
 
     .viseme-images {
       position: relative;
-      width: 200px;
-      height: 200px;
+      width: 180px;
+      height: 180px;
+      margin: 0 auto;
     }
 
     .viseme-images img {
@@ -173,8 +249,7 @@
     }
 
     .viseme-label {
-      text-align: center;
-      margin-top: 16px;
+      margin-top: 12px;
       font-size: 14px;
       color: #888;
       font-weight: 500;
@@ -182,341 +257,407 @@
 
     .results {
       background: #0f0f0f;
-      border-radius: 12px;
-      padding: 24px;
+      border-radius: 8px;
+      padding: 16px;
       border: 1px solid #2a2a2a;
+      margin-bottom: 16px;
     }
 
     .results-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .results h3 {
-      color: #ffffff;
-      font-size: 1.1em;
-      font-weight: 600;
+      color: #fff;
+      font-size: 1em;
       margin: 0;
     }
 
     .play-btn {
       background: #51cf66;
-      color: white;
-      border: none;
       padding: 8px 16px;
-      border-radius: 6px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s, transform 0.1s;
+      font-size: 13px;
       min-width: auto;
-      flex: none;
     }
 
     .play-btn:hover:not(:disabled) {
       background: #40c057;
-      transform: translateY(-1px);
-    }
-
-    .play-btn:disabled {
-      background: #2a2a2a;
-      color: #666;
-      cursor: not-allowed;
     }
 
     .cues-list {
-      max-height: 300px;
+      max-height: 200px;
       overflow-y: auto;
-    }
-
-    .cues-list::-webkit-scrollbar {
-      width: 8px;
-    }
-
-    .cues-list::-webkit-scrollbar-track {
-      background: #1a1a1a;
-      border-radius: 4px;
-    }
-
-    .cues-list::-webkit-scrollbar-thumb {
-      background: #333;
-      border-radius: 4px;
-    }
-
-    .cues-list::-webkit-scrollbar-thumb:hover {
-      background: #444;
     }
 
     .cue {
       background: #1a1a1a;
-      padding: 12px 16px;
-      border-radius: 6px;
-      margin-bottom: 8px;
+      padding: 8px 12px;
+      border-radius: 4px;
+      margin-bottom: 6px;
       display: flex;
       justify-content: space-between;
-      align-items: center;
       border-left: 3px solid #4a9eff;
+      font-size: 13px;
     }
 
     .cue-time {
       color: #888;
-      font-size: 13px;
-      font-family: 'SF Mono', Monaco, monospace;
+      font-family: monospace;
     }
 
     .cue-value {
       font-weight: 700;
       color: #4a9eff;
-      font-size: 18px;
-      font-family: 'SF Mono', Monaco, monospace;
+      font-family: monospace;
+    }
+
+    .metrics {
+      background: #0f0f0f;
+      border-radius: 8px;
+      padding: 16px;
+      border: 1px solid #2a2a2a;
+    }
+
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #2a2a2a;
+    }
+
+    .metric:last-child {
+      border-bottom: none;
+    }
+
+    .metric-label {
+      color: #888;
+      font-size: 13px;
+    }
+
+    .metric-value {
+      color: #4a9eff;
+      font-weight: 600;
+      font-family: monospace;
     }
 
     .error {
       background: #2a1a1a;
       color: #ff6b6b;
-      padding: 14px 18px;
-      border-radius: 8px;
-      margin-top: 16px;
+      padding: 12px 16px;
+      border-radius: 6px;
       border: 1px solid #4a2a2a;
-      font-size: 14px;
+      font-size: 13px;
     }
 
-    .logs {
-      margin-top: 32px;
-    }
-
-    .logs-content {
-      background: #0f0f0f;
-      border: 1px solid #2a2a2a;
-      border-radius: 8px;
-      padding: 15px;
-      margin-top: 16px;
-      max-height: 300px;
-      overflow-y: auto;
-      font-family: 'SF Mono', Monaco, 'Courier New', monospace;
-      font-size: 12px;
-      line-height: 1.5;
-      color: #888;
-    }
-
-    .log-entry.info {
-      color: #4a9eff;
-    }
-
-    .log-entry.error {
-      color: #ff6b6b;
-    }
-
-    .log-entry.warn {
-      color: #ffd43b;
-    }
-
-    .log-entry.success {
-      color: #51cf66;
-    }
-
-    .logs-content::-webkit-scrollbar {
-      width: 8px;
-    }
-
-    .logs-content::-webkit-scrollbar-track {
-      background: #000;
-      border-radius: 4px;
-    }
-
-    .logs-content::-webkit-scrollbar-thumb {
-      background: #333;
-      border-radius: 4px;
-    }
-
-    .logs-content::-webkit-scrollbar-thumb:hover {
-      background: #444;
+    input[type="file"] {
+      display: none;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>🎤 LipSyncEngine.js</h1>
-    <p class="subtitle">Vanilla JavaScript Example (CDN)</p>
+    <header>
+      <h1>🎤 LipSyncEngine</h1>
+      <p class="subtitle">Vanilla JavaScript - All Execution Modes</p>
+    </header>
 
-    <div class="input-group">
-      <label for="dialogText">Dialog Text (Optional - improves accuracy)</label>
-      <input
-        type="text"
-        id="dialogText"
-        placeholder="Enter the text that will be spoken..."
-      >
+    <div class="mode-selector">
+      <h2>Execution Mode</h2>
+      <div class="mode-buttons">
+        <button class="mode-btn active" data-mode="single">
+          <div class="mode-title">🔄 Single Thread</div>
+          <div class="mode-desc">Blocks UI during analysis (~2-3s)</div>
+        </button>
+        <button class="mode-btn" data-mode="worker">
+          <div class="mode-title">⚡ Web Worker</div>
+          <div class="mode-desc">Non-blocking, UI responsive</div>
+        </button>
+        <button class="mode-btn" data-mode="chunked">
+          <div class="mode-title">🚀 Chunked Workers</div>
+          <div class="mode-desc">Parallel processing (~5x faster)</div>
+        </button>
+      </div>
     </div>
 
-    <div class="controls">
-      <button id="recordBtn">🎙️ Record Audio (5s)</button>
-      <button id="loadBtn">📁 Load Audio File</button>
-      <input type="file" id="fileInput" accept="audio/*" style="display: none;">
-    </div>
+    <div class="main-content">
+      <!-- Left Panel: Controls -->
+      <div class="panel">
+        <h2>Audio Input</h2>
 
-    <div id="status" class="status">Initializing LipSyncEngineEngine...</div>
-
-    <div id="visemeDisplay" class="viseme-display">
-      <div>
-        <div class="viseme-images" id="visemeImages">
-          <img src="../assets/visemes/X.png" alt="X" data-viseme="X">
-          <img src="../assets/visemes/A.png" alt="A" data-viseme="A">
-          <img src="../assets/visemes/B.png" alt="B" data-viseme="B">
-          <img src="../assets/visemes/C.png" alt="C" data-viseme="C">
-          <img src="../assets/visemes/D.png" alt="D" data-viseme="D">
-          <img src="../assets/visemes/E.png" alt="E" data-viseme="E">
-          <img src="../assets/visemes/F.png" alt="F" data-viseme="F">
-          <img src="../assets/visemes/G.png" alt="G" data-viseme="G">
-          <img src="../assets/visemes/H.png" alt="H" data-viseme="H">
+        <div class="input-group">
+          <label for="dialogText">Dialog Text (optional)</label>
+          <input type="text" id="dialogText" placeholder="Enter spoken text...">
         </div>
-        <div class="viseme-label" id="visemeLabel">Closed/Rest (X)</div>
+
+        <div class="slider-group">
+          <label for="recordingDuration">Recording Duration: <span id="recordingDurationValue">10</span>s</label>
+          <input type="range" id="recordingDuration" value="10" min="5" max="60" step="5">
+          <small>Adjust recording duration (5-60 seconds)</small>
+        </div>
+
+        <div class="slider-group" id="chunkSettings" style="display:none;">
+          <label for="chunkSize">Chunk Size (seconds): <span id="chunkSizeValue">5</span>s</label>
+          <input type="range" id="chunkSize" value="5" min="1" max="10" step="1">
+          <small>Smaller chunks = more parallelization, larger chunks = better context</small>
+        </div>
+
+        <div class="controls">
+          <button id="recordBtn" disabled>🎙️ Record (10s)</button>
+          <button id="loadBtn" disabled>📁 Load File</button>
+          <input type="file" id="fileInput" accept="audio/*">
+        </div>
+
+        <div id="status" class="status">Initializing...</div>
+
+        <div id="error" class="error" style="display:none;"></div>
+
+        <div class="metrics">
+          <div class="metric">
+            <span class="metric-label">Execution Time</span>
+            <span class="metric-value" id="execTime">-</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Cues Found</span>
+            <span class="metric-value" id="cuesCount">-</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Audio Duration</span>
+            <span class="metric-value" id="audioDuration">-</span>
+          </div>
+          <div class="metric" id="workerMetric" style="display:none;">
+            <span class="metric-label">Workers Used</span>
+            <span class="metric-value" id="workersUsed">-</span>
+          </div>
+        </div>
       </div>
-    </div>
 
-    <div id="results" class="results" style="display: none;">
-      <div class="results-header">
-        <h3>Lip Sync Results</h3>
-        <button id="playBtn" class="play-btn">▶ Play</button>
+      <!-- Right Panel: Visualization -->
+      <div class="panel">
+        <h2>Lip Sync Preview</h2>
+
+        <div class="viseme-display">
+          <div class="viseme-images" id="visemeImages">
+            <img src="../assets/visemes/X.png" alt="X" data-viseme="X" class="active">
+            <img src="../assets/visemes/A.png" alt="A" data-viseme="A">
+            <img src="../assets/visemes/B.png" alt="B" data-viseme="B">
+            <img src="../assets/visemes/C.png" alt="C" data-viseme="C">
+            <img src="../assets/visemes/D.png" alt="D" data-viseme="D">
+            <img src="../assets/visemes/E.png" alt="E" data-viseme="E">
+            <img src="../assets/visemes/F.png" alt="F" data-viseme="F">
+            <img src="../assets/visemes/G.png" alt="G" data-viseme="G">
+            <img src="../assets/visemes/H.png" alt="H" data-viseme="H">
+          </div>
+          <div class="viseme-label" id="visemeLabel">Closed/Rest (X)</div>
+        </div>
+
+        <div id="results" class="results" style="display:none;">
+          <div class="results-header">
+            <h3>Mouth Cues</h3>
+            <button id="playBtn" class="play-btn">▶ Play</button>
+          </div>
+          <div id="cuesList" class="cues-list"></div>
+        </div>
       </div>
-      <div id="cuesList" class="cues-list"></div>
-    </div>
-
-    <div id="error" class="error" style="display: none;"></div>
-
-    <div class="logs">
-      <h3>Logs</h3>
-      <div id="logsContent" class="logs-content"></div>
     </div>
   </div>
 
   <script type="module">
-    // Import from unpkg.com CDN
-    import { LipSyncEngine, recordAudio, loadAudio } from 'https://unpkg.com/lip-sync-engine@latest/dist/index.mjs';
+    import { LipSyncEngine, WorkerPool, recordAudio, loadAudio } from 'https://unpkg.com/lip-sync-engine@latest/dist/index.mjs';
 
+    // DOM elements
+    const modeButtons = document.querySelectorAll('.mode-btn');
+    const chunkSettings = document.getElementById('chunkSettings');
     const recordBtn = document.getElementById('recordBtn');
     const loadBtn = document.getElementById('loadBtn');
     const playBtn = document.getElementById('playBtn');
     const fileInput = document.getElementById('fileInput');
     const dialogTextInput = document.getElementById('dialogText');
+    const chunkSizeInput = document.getElementById('chunkSize');
+    const chunkSizeValueEl = document.getElementById('chunkSizeValue');
+    const recordingDurationInput = document.getElementById('recordingDuration');
+    const recordingDurationValueEl = document.getElementById('recordingDurationValue');
     const statusEl = document.getElementById('status');
     const resultsEl = document.getElementById('results');
     const cuesListEl = document.getElementById('cuesList');
     const errorEl = document.getElementById('error');
-    const visemeDisplayEl = document.getElementById('visemeDisplay');
     const visemeImagesEl = document.getElementById('visemeImages');
     const visemeLabelEl = document.getElementById('visemeLabel');
-    const logsContentEl = document.getElementById('logsContent');
+    const execTimeEl = document.getElementById('execTime');
+    const cuesCountEl = document.getElementById('cuesCount');
+    const audioDurationEl = document.getElementById('audioDuration');
+    const workersUsedEl = document.getElementById('workersUsed');
+    const workerMetricEl = document.getElementById('workerMetric');
 
     const visemeNames = {
-      X: 'Closed/Rest',
-      A: 'Open',
-      B: 'Lips Together',
-      C: 'Rounded',
-      D: 'Tongue-Teeth',
-      E: 'Slightly Open',
-      F: 'F/V Sound',
-      G: 'Open Back',
-      H: 'Wide Open'
+      X: 'Closed/Rest', A: 'Open', B: 'Lips Together', C: 'Rounded',
+      D: 'Tongue-Teeth', E: 'Slightly Open', F: 'F/V Sound',
+      G: 'Open Back', H: 'Wide Open'
     };
 
+    let currentMode = 'single';
     let lipSyncEngine = null;
-    let currentPlayback = null;
+    let workerPool = null;
     let lastResult = null;
     let lastAudioBuffer = null;
+    let currentPlayback = null;
 
-    // Intercept console logs to display in UI
-    const originalConsoleLog = console.log;
-    const originalConsoleError = console.error;
-    const originalConsoleWarn = console.warn;
+    // Slider updates
+    recordingDurationInput.addEventListener('input', (e) => {
+      recordingDurationValueEl.textContent = e.target.value;
+      recordBtn.textContent = `🎙️ Record (${e.target.value}s)`;
+    });
 
-    function getTimestamp() {
-      const now = new Date();
-      const hours = now.getHours().toString().padStart(2, '0');
-      const minutes = now.getMinutes().toString().padStart(2, '0');
-      const seconds = now.getSeconds().toString().padStart(2, '0');
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      const displayHours = hours % 12 || 12;
-      return `[${displayHours}:${minutes}:${seconds} ${ampm}]`;
-    }
+    chunkSizeInput.addEventListener('input', (e) => {
+      chunkSizeValueEl.textContent = e.target.value;
+    });
 
-    function addLog(message, type = 'info') {
-      const logEntry = document.createElement('div');
-      logEntry.className = `log-entry ${type}`;
-      logEntry.textContent = `${getTimestamp()} ${message}`;
-      logsContentEl.appendChild(logEntry);
-      logsContentEl.scrollTop = logsContentEl.scrollHeight;
-    }
+    // Mode selection
+    modeButtons.forEach(btn => {
+      btn.addEventListener('click', async () => {
+        modeButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentMode = btn.dataset.mode;
+        chunkSettings.style.display = currentMode === 'chunked' ? 'block' : 'none';
+        workerMetricEl.style.display = currentMode === 'chunked' ? 'block' : 'none';
 
-    console.log = function(...args) {
-      originalConsoleLog.apply(console, args);
-      addLog(args.join(' '), 'info');
-    };
-
-    console.error = function(...args) {
-      originalConsoleError.apply(console, args);
-      addLog(args.join(' '), 'error');
-    };
-
-    console.warn = function(...args) {
-      originalConsoleWarn.apply(console, args);
-      addLog(args.join(' '), 'warn');
-    };
-
-    // Set initial viseme
-    function setViseme(viseme) {
-      const images = visemeImagesEl.querySelectorAll('img');
-      images.forEach(img => {
-        img.classList.toggle('active', img.dataset.viseme === viseme);
+        // Pre-warm worker pool for chunked mode
+        if (currentMode === 'chunked' && workerPool) {
+          console.log('Warming up worker pool for chunked mode...');
+          statusEl.textContent = 'Warming up worker pool...';
+          statusEl.className = 'status analyzing';
+          try {
+            await workerPool.warmup();
+            const stats = workerPool.getStats();
+            console.log(`✅ WorkerPool ready (${stats.totalWorkers} workers)`);
+            statusEl.textContent = 'Ready! Select mode and analyze audio';
+            statusEl.className = 'status success';
+          } catch (err) {
+            console.error('Warmup failed:', err);
+            statusEl.textContent = 'Ready! Select mode and analyze audio';
+            statusEl.className = 'status success';
+          }
+        }
       });
-      visemeLabelEl.textContent = `${visemeNames[viseme]} (${viseme})`;
-    }
+    });
 
-    // Initialize with X viseme
-    setViseme('X');
-
-    // Initialize LipSyncEngine
+    // Initialize
+    // NOTE: This vanilla example eagerly initializes both engines for simplicity
+    // In production, you may want to initialize based on selected mode (see React/Vue/Svelte examples)
     async function init() {
       try {
-        addLog('Initializing LipSyncEngine WASM module...', 'info');
+        statusEl.textContent = 'Initializing engines...';
+
+        // Initialize main thread engine (for single mode)
+        console.log('Initializing LipSyncEngine...');
         lipSyncEngine = LipSyncEngine.getInstance();
         await lipSyncEngine.init({
           wasmPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.wasm',
           dataPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.data',
           jsPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.js'
         });
-        addLog('✅ WASM module loaded successfully', 'success');
-        addLog('Viseme images preloaded', 'info');
-        statusEl.textContent = 'Ready to analyze audio';
-        statusEl.className = 'status';
+        console.log('LipSyncEngine ready');
+
+        // Initialize worker pool (for worker and chunked modes)
+        console.log('Initializing WorkerPool...');
+        workerPool = WorkerPool.getInstance();
+        await workerPool.init({
+          wasmPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.wasm',
+          dataPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.data',
+          jsPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.js',
+          workerScriptUrl: 'https://unpkg.com/lip-sync-engine@latest/dist/worker.js'
+        });
+        console.log('WorkerPool ready (1 worker created)');
+        console.log('Note: Additional workers will be created on-demand for chunked mode');
+
+        statusEl.textContent = 'Ready! Select mode and analyze audio';
+        statusEl.className = 'status success';
         recordBtn.disabled = false;
         loadBtn.disabled = false;
       } catch (err) {
-        showError('Failed to initialize LipSyncEngine: ' + err.message);
+        showError('Initialization failed: ' + err.message);
       }
+    }
+
+    // Split audio into chunks
+    function splitIntoChunks(pcm16, chunkDurationSec, sampleRate = 16000) {
+      const chunkSize = chunkDurationSec * sampleRate;
+      const chunks = [];
+
+      for (let i = 0; i < pcm16.length; i += chunkSize) {
+        chunks.push(pcm16.slice(i, Math.min(i + chunkSize, pcm16.length)));
+      }
+
+      return chunks;
     }
 
     // Analyze audio
     async function analyze(pcm16, audioBuffer) {
       try {
-        statusEl.textContent = 'Analyzing audio...';
+        errorEl.style.display = 'none';
         statusEl.className = 'status analyzing';
-
-        addLog('=== Starting Analysis ===', 'info');
         const dialogText = dialogTextInput.value.trim();
-        const duration = (pcm16.length / 16000).toFixed(2);
-        addLog(`Analyzing ${pcm16.length} samples (${duration}s at 16kHz)${dialogText ? ' with dialog text' : ''}`, 'info');
+        const startTime = performance.now();
 
-        const result = await lipSyncEngine.analyze(pcm16, {
-          dialogText: dialogText || undefined,
-          sampleRate: 16000
-        });
+        let result;
 
-        addLog(`✅ Analysis complete! Found ${result.mouthCues.length} mouth cues`, 'success');
+        if (currentMode === 'single') {
+          statusEl.textContent = 'Analyzing (blocking UI)...';
+          result = await lipSyncEngine.analyze(pcm16, {
+            dialogText: dialogText || undefined,
+            sampleRate: 16000
+          });
+
+        } else if (currentMode === 'worker') {
+          statusEl.textContent = 'Analyzing in worker (non-blocking)...';
+          result = await workerPool.analyze(pcm16, {
+            dialogText: dialogText || undefined,
+            sampleRate: 16000
+          });
+
+        } else if (currentMode === 'chunked') {
+          const chunkSize = parseInt(chunkSizeInput.value);
+          const chunks = splitIntoChunks(pcm16, chunkSize);
+          statusEl.textContent = `Processing ${chunks.length} chunks in parallel...`;
+
+          const results = await workerPool.analyzeChunks(chunks, {
+            dialogText: dialogText || undefined,
+            sampleRate: 16000
+          });
+
+          // Combine results
+          const allCues = [];
+          let timeOffset = 0;
+
+          results.forEach((chunkResult, i) => {
+            chunkResult.mouthCues.forEach(cue => {
+              allCues.push({
+                start: cue.start + timeOffset,
+                end: cue.end + timeOffset,
+                value: cue.value
+              });
+            });
+            timeOffset += chunkSize;
+          });
+
+          result = { mouthCues: allCues };
+          workersUsedEl.textContent = Math.min(chunks.length, navigator.hardwareConcurrency || 4);
+        }
+
+        const endTime = performance.now();
+        const execTime = ((endTime - startTime) / 1000).toFixed(2);
+
+        // Update metrics
+        execTimeEl.textContent = `${execTime}s`;
+        cuesCountEl.textContent = result.mouthCues.length;
+        audioDurationEl.textContent = `${(pcm16.length / 16000).toFixed(2)}s`;
+
         displayResults(result, audioBuffer);
-        statusEl.textContent = `Analysis complete! Found ${result.mouthCues.length} mouth cues`;
+        statusEl.textContent = `Analysis complete in ${execTime}s!`;
         statusEl.className = 'status success';
+
       } catch (err) {
         showError('Analysis failed: ' + err.message);
         statusEl.textContent = 'Analysis failed';
@@ -532,7 +673,7 @@
       resultsEl.style.display = 'block';
       cuesListEl.innerHTML = '';
 
-      result.mouthCues.forEach((cue) => {
+      result.mouthCues.forEach(cue => {
         const cueEl = document.createElement('div');
         cueEl.className = 'cue';
         cueEl.innerHTML = `
@@ -542,11 +683,19 @@
         cuesListEl.appendChild(cueEl);
       });
 
-      // Auto-play animation
       playAnimation(result.mouthCues, audioBuffer);
     }
 
-    // Play animation synchronized with audio
+    // Set viseme
+    function setViseme(viseme) {
+      const images = visemeImagesEl.querySelectorAll('img');
+      images.forEach(img => {
+        img.classList.toggle('active', img.dataset.viseme === viseme);
+      });
+      visemeLabelEl.textContent = `${visemeNames[viseme]} (${viseme})`;
+    }
+
+    // Play animation
     function playAnimation(mouthCues, audioBuffer) {
       if (!audioBuffer) return;
 
@@ -562,20 +711,17 @@
       source.start(0);
       currentPlayback = source;
 
-      // Animate visemes
       let currentCueIndex = 0;
 
       function updateViseme() {
         const elapsed = audioContext.currentTime - startTime;
 
-        while (currentCueIndex < mouthCues.length &&
-               mouthCues[currentCueIndex].end < elapsed) {
+        while (currentCueIndex < mouthCues.length && mouthCues[currentCueIndex].end < elapsed) {
           currentCueIndex++;
         }
 
         if (currentCueIndex < mouthCues.length) {
-          const cue = mouthCues[currentCueIndex];
-          setViseme(cue.value);
+          setViseme(mouthCues[currentCueIndex].value);
           requestAnimationFrame(updateViseme);
         } else {
           setViseme('X');
@@ -591,12 +737,10 @@
       };
     }
 
-    // Play button - replay the animation
+    // Replay animation
     playBtn.addEventListener('click', () => {
       if (lastResult && lastAudioBuffer) {
-        if (currentPlayback) {
-          currentPlayback.stop();
-        }
+        if (currentPlayback) currentPlayback.stop();
         playAnimation(lastResult.mouthCues, lastAudioBuffer);
       }
     });
@@ -606,22 +750,14 @@
       try {
         recordBtn.disabled = true;
         loadBtn.disabled = true;
-        statusEl.textContent = 'Recording... Speak now!';
-        statusEl.className = 'status recording';
+        const recordingDuration = parseInt(recordingDurationInput.value);
+        statusEl.textContent = `Recording ${recordingDuration} seconds... Speak now!`;
+        statusEl.className = 'status analyzing';
         resultsEl.style.display = 'none';
-        errorEl.style.display = 'none';
 
-        addLog('=== Starting Recording ===', 'info');
-        addLog('Microphone access granted', 'info');
-        addLog('Recording 5 seconds...', 'info');
-
-        const { pcm16, audioBuffer } = await recordAudio(5000);
-
-        addLog('Recording stopped', 'info');
-        const duration = (pcm16.length / 16000).toFixed(2);
-        addLog(`✅ Captured ${pcm16.length} samples (${duration}s)`, 'success');
-
+        const { pcm16, audioBuffer } = await recordAudio(recordingDuration * 1000);
         await analyze(pcm16, audioBuffer);
+
       } catch (err) {
         showError('Recording failed: ' + err.message);
         statusEl.textContent = 'Recording failed';
@@ -633,9 +769,7 @@
     });
 
     // Load audio file
-    loadBtn.addEventListener('click', () => {
-      fileInput.click();
-    });
+    loadBtn.addEventListener('click', () => fileInput.click());
 
     fileInput.addEventListener('change', async (e) => {
       const file = e.target.files[0];
@@ -647,17 +781,10 @@
         statusEl.textContent = 'Loading audio file...';
         statusEl.className = 'status analyzing';
         resultsEl.style.display = 'none';
-        errorEl.style.display = 'none';
-
-        addLog('=== Loading Audio File ===', 'info');
-        addLog(`File: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`, 'info');
 
         const { pcm16, audioBuffer } = await loadAudio(file);
-
-        const duration = (pcm16.length / 16000).toFixed(2);
-        addLog(`✅ Decoded: ${pcm16.length} samples (${duration}s at 16kHz)`, 'success');
-
         await analyze(pcm16, audioBuffer);
+
       } catch (err) {
         showError('Failed to load audio: ' + err.message);
         statusEl.textContent = 'Failed to load audio';
@@ -674,9 +801,7 @@
       errorEl.style.display = 'block';
     }
 
-    // Initialize on load
-    recordBtn.disabled = true;
-    loadBtn.disabled = true;
+    // Initialize
     init();
   </script>
 </body>

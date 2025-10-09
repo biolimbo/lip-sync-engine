@@ -1,7 +1,7 @@
 // Main exports
 export { LipSyncEngine, analyze, analyzeAsync } from './LipSyncEngine';
 export { WasmLoader } from './WasmLoader';
-export { WorkerPool } from './WorkerPool';
+export { WorkerPool, StreamAnalyzerController } from './WorkerPool';
 
 // Utilities
 export * from './utils/AudioConverter';
@@ -15,3 +15,13 @@ export type {
   ProgressCallback,
   WasmLoaderOptions,
 } from './types';
+
+// Worker types
+export type {
+  WorkerAnalyzeRequest,
+  WorkerAnalyzeResponse,
+  WorkerInitRequest,
+  WorkerInitResponse,
+  WorkerRequest,
+  WorkerResponse,
+} from './worker';

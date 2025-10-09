@@ -15,6 +15,7 @@ WebAssembly port of [Rhubarb Lip Sync](https://github.com/DanielSWolf/rhubarb-li
 - 🔧 **TypeScript** - Full type definitions included
 - 🌐 **Framework-Agnostic** - Works with React, Vue, Svelte, vanilla JS, and any framework
 - 🧵 **Web Workers** - Non-blocking analysis with worker pool
+- 🔄 **Streaming Support** - Dynamic real-time chunk processing for live audio
 - 🎨 **Complete API** - Audio utilities, format conversion, microphone recording
 - 📱 **Browser-Native** - No server required, runs entirely client-side
 
@@ -151,6 +152,7 @@ See [examples/svelte](./examples/svelte) for complete example.
 
 - [Getting Started](./docs/getting-started.md)
 - [API Reference](./docs/api-reference.md)
+- [Streaming Analysis Guide](./docs/streaming-analysis.md) - Real-time chunk processing
 - Framework Examples:
   - [Vanilla JS](./examples/vanilla/README.md)
   - [React](./examples/react/README.md)
@@ -199,6 +201,32 @@ const lipSyncEngine = LipSyncEngine.getInstance();
 await lipSyncEngine.init();
 const result = await lipSyncEngine.analyze(pcm16, options);
 ```
+
+### Streaming Analysis (Real-Time)
+
+```typescript
+import { WorkerPool } from 'lip-sync-engine';
+
+const pool = WorkerPool.getInstance(4);
+await pool.init({ /* paths */ });
+await pool.warmup(); // Pre-create workers
+
+// Create streaming analyzer
+const stream = pool.createStreamAnalyzer({
+  dialogText: "Expected dialog",
+  sampleRate: 16000
+});
+
+// Add chunks as they arrive from WebSocket, MediaRecorder, etc.
+for await (const chunk of audioStream) {
+  stream.addChunk(chunk); // Non-blocking!
+}
+
+// Get all results in order
+const results = await stream.finalize();
+```
+
+See [Streaming Analysis Guide](./docs/streaming-analysis.md) for complete usage patterns.
 
 ### Audio Utilities
 
@@ -283,9 +311,16 @@ MIT License - see [LICENSE](./LICENSE)
 
 Report issues at [https://github.com/biolimbo/lip-sync-engine/issues](https://github.com/biolimbo/lip-sync-engine/issues)
 
+## ✅ What's New
+
+- **Recording Duration Control** - Examples now include adjustable recording duration (5-60 seconds)
+- **Worker Pool Warmup** - Pre-initialize all workers for optimal chunked performance
+- **Mode-Based Initialization** - Single thread, web worker, and chunked workers modes
+- **Enhanced Examples** - All framework examples include performance metrics and visual feedback
+
 ## 📈 Roadmap
 
-- [ ] Full Web Worker implementation
+- [x] Full Web Worker implementation
 - [ ] Multiple language support
 - [ ] Custom phoneme-to-viseme mappings
 - [ ] Real-time streaming analysis

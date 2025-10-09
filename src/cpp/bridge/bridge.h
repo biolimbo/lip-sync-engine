@@ -47,6 +47,13 @@ void lipsyncengine_free(const char* ptr);
  */
 const char* lipsyncengine_get_last_error();
 
+/**
+ * Cleanup function to free decoder resources.
+ * Call this when completely done with analysis to free memory.
+ * Phase 0: Decoder reuse optimization cleanup.
+ */
+void lipsyncengine_cleanup();
+
 #ifdef __cplusplus
 }
 #endif

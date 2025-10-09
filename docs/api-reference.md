@@ -98,6 +98,275 @@ Clean up resources and destroy the instance.
 lipSyncEngine.destroy();
 ```
 
+---
+
+### WorkerPool
+
+Worker pool for non-blocking, parallel lip-sync analysis in Web Workers.
+
+```typescript
+class WorkerPool {
+  static getInstance(maxWorkers?: number, workerScriptUrl?: string): WorkerPool
+  async init(options?: WorkerPoolInitOptions): Promise<void>
+  async warmup(): Promise<void>
+  async analyze(pcm16: Int16Array, options?: LipSyncEngineOptions): Promise<LipSyncEngineResult>
+  async analyzeChunks(chunks: Int16Array[], options?: LipSyncEngineOptions): Promise<LipSyncEngineResult[]>
+  createStreamAnalyzer(options?: LipSyncEngineOptions): StreamAnalyzerController
+  getStats(): WorkerPoolStats
+  destroy(): void
+}
+```
+
+#### `getInstance(maxWorkers?, workerScriptUrl?)`
+
+Get the singleton WorkerPool instance.
+
+**Parameters:**
+- `maxWorkers?: number` - Maximum number of workers (default: `navigator.hardwareConcurrency` or 4)
+- `workerScriptUrl?: string` - Custom worker script URL (default: '/dist/worker.js')
+
+**Returns:** `WorkerPool` - The singleton instance
+
+**Example:**
+```typescript
+// Default: auto-detect CPU cores
+const pool = WorkerPool.getInstance();
+
+// Custom: limit to 2 workers
+const pool = WorkerPool.getInstance(2);
+
+// Custom worker URL
+const pool = WorkerPool.getInstance(4, '/custom/worker.js');
+```
+
+#### `init(options?)`
+
+Initialize the worker pool. Must be called before analysis.
+
+**Parameters:**
+- `options?: WorkerPoolInitOptions` - Worker initialization options
+  - `wasmPath?: string` - Path to WASM file
+  - `dataPath?: string` - Path to data file
+  - `jsPath?: string` - Path to JS loader file
+  - `workerScriptUrl?: string` - Path to worker script
+
+**Returns:** `Promise<void>`
+
+**Example:**
+```typescript
+await pool.init({
+  wasmPath: '/dist/wasm/lip-sync-engine.wasm',
+  dataPath: '/dist/wasm/lip-sync-engine.data',
+  jsPath: '/dist/wasm/lip-sync-engine.js',
+  workerScriptUrl: '/dist/worker.js'
+});
+```
+
+#### `warmup()`
+
+Pre-create all workers up to maxWorkers. Call during app initialization to eliminate worker creation overhead for streaming workloads.
+
+**Returns:** `Promise<void>`
+
+**Example:**
+```typescript
+await pool.init({ /* paths */ });
+await pool.warmup(); // Creates all workers upfront
+// Now all workers are ready for immediate chunked processing
+```
+
+#### `analyze(pcm16, options?)`
+
+Analyze audio in a Web Worker (non-blocking).
+
+**Parameters:**
+- `pcm16: Int16Array` - 16-bit PCM audio buffer (mono)
+- `options?: LipSyncEngineOptions` - Analysis options
+
+**Returns:** `Promise<LipSyncEngineResult>`
+
+**Benefits:**
+- ✅ Non-blocking - UI stays responsive
+- ✅ Decoder reuse - 500-700ms faster after first call
+- ✅ Automatic worker management
+- ✅ Zero-copy buffer transfer (when possible)
+
+**Example:**
+```typescript
+// Analyze without blocking UI
+const result = await pool.analyze(pcm16, {
+  dialogText: "Hello world",
+  sampleRate: 16000
+});
+
+console.log(result.mouthCues);
+```
+
+#### `analyzeChunks(chunks, options?)`
+
+Analyze multiple audio chunks in parallel using worker pool.
+
+**Parameters:**
+- `chunks: Int16Array[]` - Array of audio chunks to process
+- `options?: LipSyncEngineOptions` - Analysis options (applied to all chunks)
+
+**Returns:** `Promise<LipSyncEngineResult[]>` - Results in same order as input
+
+**Performance:**
+- 🚀 Parallel processing across multiple workers
+- ⚡ ~5x faster for 5 chunks (vs sequential)
+- 🎯 Automatic load balancing
+
+**Example:**
+```typescript
+// Split long audio into 5-second chunks
+const chunkSize = 16000 * 5; // 5 seconds at 16kHz
+const chunks: Int16Array[] = [];
+
+for (let i = 0; i < fullAudio.length; i += chunkSize) {
+  chunks.push(fullAudio.slice(i, i + chunkSize));
+}
+
+// Process all chunks in parallel
+const results = await pool.analyzeChunks(chunks, {
+  dialogText: "Dialog for all chunks"
+});
+
+// Combine results
+const allCues = results.flatMap(r => r.mouthCues);
+```
+
+#### `createStreamAnalyzer(options?)`
+
+Create a streaming analyzer for dynamic, real-time chunk processing. Perfect for live audio streams, WebSockets, or MediaRecorder.
+
+**Parameters:**
+- `options?: LipSyncEngineOptions` - Analysis options (applied to all chunks)
+
+**Returns:** `StreamAnalyzerController`
+
+**Use Cases:**
+- 🎙️ Live audio streams (WebSocket, MediaRecorder)
+- 📡 Real-time processing with minimal main thread overhead
+- 🔄 Dynamic chunk arrival (don't need all chunks upfront)
+- ⚡ Maximum parallelism with pre-warmed workers
+
+**Example:**
+```typescript
+await pool.warmup(); // Pre-create workers
+
+const stream = pool.createStreamAnalyzer({
+  dialogText: "Expected dialog",
+  sampleRate: 16000
+});
+
+// Add chunks as they arrive (non-blocking!)
+for await (const chunk of audioStream) {
+  stream.addChunk(chunk); // Returns immediately
+}
+
+// Get all results in order
+const results = await stream.finalize();
+```
+
+See [Streaming Analysis Guide](./streaming-analysis.md) for detailed usage patterns.
+
+#### `getStats()`
+
+Get worker pool statistics.
+
+**Returns:** `WorkerPoolStats`
+- `totalWorkers: number` - Total workers created
+- `busyWorkers: number` - Workers currently processing
+- `idleWorkers: number` - Workers available
+- `queuedJobs: number` - Jobs waiting for worker
+- `maxWorkers: number` - Maximum workers configured
+
+**Example:**
+```typescript
+const stats = pool.getStats();
+console.log(`Workers: ${stats.busyWorkers}/${stats.totalWorkers} busy`);
+console.log(`Queue: ${stats.queuedJobs} jobs waiting`);
+```
+
+#### `destroy()`
+
+Terminate all workers and clean up resources.
+
+**Example:**
+```typescript
+// Clean up when done
+pool.destroy();
+```
+
+---
+
+### StreamAnalyzerController
+
+Controller for dynamic streaming analysis. Created via `WorkerPool.createStreamAnalyzer()`.
+
+```typescript
+class StreamAnalyzerController {
+  addChunk(chunk: Int16Array): number
+  async finalize(): Promise<LipSyncEngineResult[]>
+  getStats(): StreamAnalyzerStats
+}
+```
+
+#### `addChunk(chunk)`
+
+Add a chunk to be analyzed. Immediately queues the chunk for processing without blocking the main thread.
+
+**Parameters:**
+- `chunk: Int16Array` - Audio chunk to analyze
+
+**Returns:** `number` - Index of this chunk in the result array
+
+**Example:**
+```typescript
+const stream = pool.createStreamAnalyzer({ sampleRate: 16000 });
+
+// Add chunks as they arrive
+const index = stream.addChunk(audioChunk);
+console.log(`Queued chunk ${index}`);
+```
+
+#### `finalize()`
+
+Wait for all chunks to complete and return results in insertion order.
+
+**Returns:** `Promise<LipSyncEngineResult[]>` - Array of results in order chunks were added
+
+**Example:**
+```typescript
+// Add all chunks
+for (const chunk of chunks) {
+  stream.addChunk(chunk);
+}
+
+// Wait for completion
+const results = await stream.finalize();
+console.log(`Processed ${results.length} chunks`);
+```
+
+#### `getStats()`
+
+Get current streaming statistics.
+
+**Returns:** `StreamAnalyzerStats`
+- `chunksAdded: number` - Total chunks added so far
+- `chunksCompleted: number` - Chunks that finished processing
+- `poolStats: WorkerPoolStats` - Underlying pool statistics
+
+**Example:**
+```typescript
+const stats = stream.getStats();
+console.log(`Progress: ${stats.chunksAdded} queued`);
+console.log(`Workers: ${stats.poolStats.busyWorkers}/${stats.poolStats.totalWorkers} busy`);
+```
+
+---
+
 ## Convenience Functions
 
 ### `analyze(pcm16, options?)`

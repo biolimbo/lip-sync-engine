@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { recordAudio, loadAudio } from 'lip-sync-engine';
 import { useLipSyncEngine } from './hooks/useLipSyncEngine';
+import type { ExecutionMode } from './hooks/useLipSyncEngine';
 import './App.css';
 
 interface LogEntry {
@@ -10,7 +11,22 @@ interface LogEntry {
 }
 
 function App() {
-  const { analyze, result, isAnalyzing, error, reset } = useLipSyncEngine();
+  const {
+    analyze,
+    result,
+    isAnalyzing,
+    error,
+    metrics,
+    reset,
+    mode,
+    setMode,
+    chunkSize,
+    setChunkSize,
+    recordingDuration,
+    setRecordingDuration,
+    getWorkerStats
+  } = useLipSyncEngine();
+
   const [dialogText, setDialogText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [currentViseme, setCurrentViseme] = useState('X');
@@ -51,7 +67,9 @@ function App() {
 
   useEffect(() => {
     addLog('Initializing LipSyncEngine WASM module...', 'info');
+    addLog('Initializing WorkerPool...', 'info');
     addLog('✅ WASM module loaded successfully', 'success');
+    addLog('✅ WorkerPool initialized', 'success');
     addLog('Viseme images preloaded', 'info');
   }, []);
 
@@ -102,9 +120,9 @@ function App() {
     try {
       addLog('=== Starting Recording ===', 'info');
       addLog('Microphone access granted', 'info');
-      addLog('Recording 5 seconds...', 'info');
+      addLog(`Recording ${recordingDuration} seconds...`, 'info');
 
-      const { pcm16, audioBuffer: buffer } = await recordAudio(5000);
+      const { pcm16, audioBuffer: buffer } = await recordAudio(recordingDuration * 1000);
 
       addLog('Recording stopped', 'info');
       const duration = (pcm16.length / 16000).toFixed(2);
@@ -113,6 +131,12 @@ function App() {
       setAudioBuffer(buffer);
 
       addLog('=== Starting Analysis ===', 'info');
+
+      const modeDescription = mode === 'single' ? 'Single Thread (blocks UI)' :
+                             mode === 'worker' ? 'Web Worker (non-blocking)' :
+                             mode === 'chunked' ? 'Chunked Workers (parallel)' :
+                             'Streaming (dynamic queue)';
+      addLog(`Mode: ${modeDescription}`, 'info');
       addLog(`Analyzing ${pcm16.length} samples (${duration}s at 16kHz)${dialogText ? ' with dialog text' : ''}`, 'info');
 
       await analyze(pcm16, {
@@ -147,6 +171,12 @@ function App() {
       setAudioBuffer(buffer);
 
       addLog('=== Starting Analysis ===', 'info');
+
+      const modeDescription = mode === 'single' ? 'Single Thread (blocks UI)' :
+                             mode === 'worker' ? 'Web Worker (non-blocking)' :
+                             mode === 'chunked' ? 'Chunked Workers (parallel)' :
+                             'Streaming (dynamic queue)';
+      addLog(`Mode: ${modeDescription}`, 'info');
       addLog(`Analyzing ${pcm16.length} samples (${duration}s at 16kHz)${dialogText ? ' with dialog text' : ''}`, 'info');
 
       await analyze(pcm16, {
@@ -172,16 +202,102 @@ function App() {
   };
 
   useEffect(() => {
-    if (result && audioBuffer && !isPlaying) {
+    if (result && audioBuffer) {
       playAnimation(result.mouthCues, audioBuffer);
     }
   }, [result]);
+
+  const handleModeChange = (newMode: ExecutionMode) => {
+    setMode(newMode);
+    const modeLabel = newMode === 'single' ? 'Single Thread' :
+                      newMode === 'worker' ? 'Web Worker' :
+                      newMode === 'chunked' ? 'Chunked Workers' :
+                      'Streaming';
+    addLog(`Execution mode changed to: ${modeLabel}`, 'info');
+  };
 
   return (
     <div className="app">
       <div className="container">
         <h1>🎤 LipSyncEngine.js</h1>
-        <p className="subtitle">React Example</p>
+        <p className="subtitle">React Example - All Execution Modes</p>
+
+        {/* Mode Selector */}
+        <div className="mode-selector">
+          <h3>Execution Mode</h3>
+          <div className="mode-buttons">
+            <button
+              className={`mode-btn ${mode === 'single' ? 'active' : ''}`}
+              onClick={() => handleModeChange('single')}
+              disabled={isAnalyzing || isRecording}
+            >
+              <div className="mode-title">Single Thread</div>
+              <div className="mode-desc">Blocks UI during analysis</div>
+            </button>
+            <button
+              className={`mode-btn ${mode === 'worker' ? 'active' : ''}`}
+              onClick={() => handleModeChange('worker')}
+              disabled={isAnalyzing || isRecording}
+            >
+              <div className="mode-title">Web Worker</div>
+              <div className="mode-desc">Non-blocking, UI stays responsive</div>
+            </button>
+            <button
+              className={`mode-btn ${mode === 'chunked' ? 'active' : ''}`}
+              onClick={() => handleModeChange('chunked')}
+              disabled={isAnalyzing || isRecording}
+            >
+              <div className="mode-title">Chunked Workers</div>
+              <div className="mode-desc">Parallel processing (~5x faster)</div>
+            </button>
+            <button
+              className={`mode-btn ${mode === 'streaming' ? 'active' : ''}`}
+              onClick={() => handleModeChange('streaming')}
+              disabled={isAnalyzing || isRecording}
+            >
+              <div className="mode-title">Streaming</div>
+              <div className="mode-desc">Dynamic queue (real-time ready)</div>
+            </button>
+          </div>
+        </div>
+
+        {/* Recording Duration Slider */}
+        <div className="chunk-settings">
+          <label htmlFor="recordingDuration">
+            Recording Duration: {recordingDuration}s
+          </label>
+          <input
+            id="recordingDuration"
+            type="range"
+            min="5"
+            max="60"
+            step="5"
+            value={recordingDuration}
+            onChange={(e) => setRecordingDuration(Number(e.target.value))}
+            disabled={isAnalyzing || isRecording}
+          />
+          <small>Adjust recording duration (5-60 seconds)</small>
+        </div>
+
+        {/* Chunk Settings - Only visible in chunked or streaming mode */}
+        {(mode === 'chunked' || mode === 'streaming') && (
+          <div className="chunk-settings">
+            <label htmlFor="chunkSize">
+              Chunk Size (seconds): {chunkSize}s
+            </label>
+            <input
+              id="chunkSize"
+              type="range"
+              min="1"
+              max="10"
+              step="1"
+              value={chunkSize}
+              onChange={(e) => setChunkSize(Number(e.target.value))}
+              disabled={isAnalyzing || isRecording}
+            />
+            <small>Smaller chunks = more parallelization, larger chunks = better context</small>
+          </div>
+        )}
 
         <div className="input-group">
           <label htmlFor="dialogText">
@@ -203,7 +319,7 @@ function App() {
             disabled={isAnalyzing || isRecording}
             className="btn"
           >
-            {isRecording ? '🎙️ Recording...' : '🎙️ Record Audio (5s)'}
+            {isRecording ? '🎙️ Recording...' : `🎙️ Record Audio (${recordingDuration}s)`}
           </button>
           <label className="btn">
             📁 Load Audio File
@@ -220,6 +336,35 @@ function App() {
         <div className={`status ${isRecording ? 'recording' : isAnalyzing ? 'analyzing' : ''}`}>
           {isRecording ? 'Recording... Speak now!' : isAnalyzing ? 'Analyzing audio...' : 'Ready to analyze audio'}
         </div>
+
+        {/* Performance Metrics */}
+        {metrics && (
+          <div className="metrics">
+            <h3>Performance Metrics</h3>
+            <div className="metrics-grid">
+              <div className="metric">
+                <div className="metric-label">Execution Time</div>
+                <div className="metric-value">{metrics.executionTime.toFixed(2)}ms</div>
+              </div>
+              <div className="metric">
+                <div className="metric-label">Mouth Cues</div>
+                <div className="metric-value">{metrics.cuesCount}</div>
+              </div>
+              {metrics.workersUsed !== undefined && (
+                <div className="metric">
+                  <div className="metric-label">Workers Used</div>
+                  <div className="metric-value">{metrics.workersUsed}</div>
+                </div>
+              )}
+              {metrics.chunksProcessed !== undefined && (
+                <div className="metric">
+                  <div className="metric-label">Chunks Processed</div>
+                  <div className="metric-value">{metrics.chunksProcessed}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="viseme-display">
           <div>

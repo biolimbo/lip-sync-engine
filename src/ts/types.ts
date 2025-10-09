@@ -65,6 +65,7 @@ export interface LipSyncEngineModule {
   ): number;
   _lipsyncengine_free(ptr: number): void;
   _lipsyncengine_get_last_error(): number;
+  _lipsyncengine_cleanup(): void; // Phase 0: Decoder cleanup
   HEAP16: Int16Array;
   lengthBytesUTF8(str: string): number;
   stringToUTF8(str: string, ptr: number, maxLen: number): void;

@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LipSyncEngine.js - Live Examples</title>
+  <meta name="description" content="High-quality lip-sync animation from audio in the browser. Interactive examples for React, Vue, Svelte, and Vanilla JavaScript.">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 20px;
+      padding: 60px 40px;
+      max-width: 900px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    h1 {
+      font-size: 3em;
+      margin-bottom: 10px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      text-align: center;
+    }
+
+    .subtitle {
+      font-size: 1.2em;
+      color: #666;
+      margin-bottom: 40px;
+      text-align: center;
+    }
+
+    .description {
+      color: #555;
+      line-height: 1.8;
+      margin-bottom: 40px;
+      font-size: 1.05em;
+    }
+
+    .examples-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .example-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px 20px;
+      border-radius: 12px;
+      text-align: center;
+      text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+      cursor: pointer;
+      display: block;
+    }
+
+    .example-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    }
+
+    .example-icon {
+      font-size: 3.5em;
+      margin-bottom: 10px;
+    }
+
+    .example-name {
+      font-size: 1.4em;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .example-desc {
+      font-size: 0.9em;
+      opacity: 0.95;
+      line-height: 1.4;
+    }
+
+    .features {
+      background: #f8f9fa;
+      border-radius: 12px;
+      padding: 30px;
+      margin-bottom: 30px;
+    }
+
+    .features h2 {
+      font-size: 1.5em;
+      margin-bottom: 20px;
+      color: #333;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+    }
+
+    .feature-item {
+      display: flex;
+      align-items: center;
+      color: #555;
+      font-size: 0.95em;
+    }
+
+    .feature-item::before {
+      content: "✓";
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border-radius: 50%;
+      margin-right: 12px;
+      text-align: center;
+      line-height: 24px;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+
+    .footer {
+      text-align: center;
+      color: #999;
+      margin-top: 40px;
+      padding-top: 30px;
+      border-top: 1px solid #eee;
+    }
+
+    .footer-links {
+      margin-top: 15px;
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .footer a {
+      color: #667eea;
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .footer a:hover {
+      color: #764ba2;
+      text-decoration: underline;
+    }
+
+    @media (max-width: 768px) {
+      .container {
+        padding: 40px 24px;
+      }
+
+      h1 {
+        font-size: 2.2em;
+      }
+
+      .subtitle {
+        font-size: 1em;
+      }
+
+      .examples-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .features-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎤 LipSyncEngine.js</h1>
+    <p class="subtitle">Live Interactive Examples</p>
+
+    <p class="description">
+      High-quality lip-sync animation from audio in the browser using WebAssembly and PocketSphinx.
+      Choose your preferred framework to explore interactive examples with microphone recording,
+      file upload, and real-time viseme animation.
+    </p>
+
+    <div class="features">
+      <h2>✨ Features</h2>
+      <div class="features-grid">
+        <div class="feature-item">Microphone recording (5-60s)</div>
+        <div class="feature-item">Audio file upload (MP3, WAV)</div>
+        <div class="feature-item">Three execution modes</div>
+        <div class="feature-item">Real-time viseme animation</div>
+        <div class="feature-item">Performance metrics</div>
+        <div class="feature-item">Worker pool support</div>
+        <div class="feature-item">TypeScript support</div>
+        <div class="feature-item">Framework agnostic</div>
+      </div>
+    </div>
+
+    <div class="examples-grid">
+      <a href="./react/" class="example-card">
+        <div class="example-icon">⚛️</div>
+        <div class="example-name">React</div>
+        <div class="example-desc">React 18 + TypeScript + Vite</div>
+      </a>
+
+      <a href="./vue/" class="example-card">
+        <div class="example-icon">💚</div>
+        <div class="example-name">Vue</div>
+        <div class="example-desc">Vue 3 + Composition API</div>
+      </a>
+
+      <a href="./svelte/" class="example-card">
+        <div class="example-icon">🧡</div>
+        <div class="example-name">Svelte</div>
+        <div class="example-desc">Svelte 4 + TypeScript</div>
+      </a>
+
+      <a href="./vanilla/" class="example-card">
+        <div class="example-icon">🍦</div>
+        <div class="example-name">Vanilla JS</div>
+        <div class="example-desc">Pure JavaScript + HTML</div>
+      </a>
+    </div>
+
+    <div class="footer">
+      <p>
+        <strong>LipSyncEngine.js</strong> - Browser-based lip-sync animation powered by WebAssembly
+      </p>
+      <div class="footer-links">
+        <a href="https://github.com/biolimbo/lip-sync-engine" target="_blank" rel="noopener noreferrer">
+          📦 GitHub Repository
+        </a>
+        <a href="https://www.npmjs.com/package/lip-sync-engine" target="_blank" rel="noopener noreferrer">
+          📥 NPM Package
+        </a>
+        <a href="https://github.com/biolimbo/lip-sync-engine#readme" target="_blank" rel="noopener noreferrer">
+          📖 Documentation
+        </a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

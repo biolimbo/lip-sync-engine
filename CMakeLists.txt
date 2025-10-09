@@ -121,7 +121,7 @@ target_compile_definitions(lip-sync-engine PRIVATE
 if(EMSCRIPTEN)
 	set_target_properties(lip-sync-engine PROPERTIES
 		LINK_FLAGS "\
-			-sEXPORTED_FUNCTIONS=_lipsyncengine_init,_lipsyncengine_analyze_pcm16,_lipsyncengine_free,_lipsyncengine_get_last_error,_malloc,_free \
+			-sEXPORTED_FUNCTIONS=_lipsyncengine_init,_lipsyncengine_analyze_pcm16,_lipsyncengine_free,_lipsyncengine_get_last_error,_lipsyncengine_cleanup,_malloc,_free \
 			-sEXPORTED_RUNTIME_METHODS=ccall,cwrap,FS,UTF8ToString,allocateUTF8,stringToUTF8,lengthBytesUTF8,HEAP16 \
 			-sALLOW_MEMORY_GROWTH=1 \
 			-sINITIAL_MEMORY=134217728 \
