@@ -163,17 +163,17 @@ See [examples/svelte](./examples/svelte) for complete example.
 
 LipSyncEngine.js generates 9 mouth shapes based on Preston Blair's phoneme categorization:
 
-| Shape | Description | Example Sounds |
-|-------|-------------|----------------|
-| X | Closed/Rest | Silence |
-| A | Open | ah, aa, aw |
-| B | Lips together | p, b, m |
-| C | Rounded | sh, ch, zh |
-| D | Tongue-teeth | th, dh, t, d, n, l |
-| E | Slightly open | eh, ae, uh |
-| F | F/V sound | f, v |
-| G | Open back | k, g, ng |
-| H | Wide open | ee, ih, ey |
+| Shape | Image | Description | Example Sounds |
+|-------|-------|-------------|----------------|
+| X | ![X](examples/assets/visemes/X.png) | Closed/Rest | Silence |
+| A | ![A](examples/assets/visemes/A.png) | Open | ah, aa, aw |
+| B | ![B](examples/assets/visemes/B.png) | Lips together | p, b, m |
+| C | ![C](examples/assets/visemes/C.png) | Rounded | sh, ch, zh |
+| D | ![D](examples/assets/visemes/D.png) | Tongue-teeth | th, dh, t, d, n, l |
+| E | ![E](examples/assets/visemes/E.png) | Slightly open | eh, ae, uh |
+| F | ![F](examples/assets/visemes/F.png) | F/V sound | f, v |
+| G | ![G](examples/assets/visemes/G.png) | Open back | k, g, ng |
+| H | ![H](examples/assets/visemes/H.png) | Wide open | ee, ih, ey |
 
 ## 🔬 How It Works
 
