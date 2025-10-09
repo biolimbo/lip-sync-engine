@@ -47,9 +47,9 @@ await lipSyncEngine.init({
 For production, pin to a specific version:
 ```typescript
 await lipSyncEngine.init({
-  wasmPath: 'https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.wasm',
-  dataPath: 'https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.data',
-  jsPath: 'https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.js'
+  wasmPath: 'https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.wasm',
+  dataPath: 'https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.data',
+  jsPath: 'https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.js'
 });
 ```
 

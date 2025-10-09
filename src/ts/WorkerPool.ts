@@ -140,9 +140,22 @@ export class WorkerPool {
    * Create a new worker and initialize it
    */
   private async createWorker(): Promise<PoolWorker> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
-        const worker = new Worker(this.workerScriptUrl);
+        // If the worker URL is from a CDN (cross-origin), fetch it and create a blob URL
+        let workerUrl = this.workerScriptUrl;
+        if (workerUrl.startsWith('http://') || workerUrl.startsWith('https://')) {
+          try {
+            const response = await fetch(workerUrl);
+            const blob = await response.blob();
+            workerUrl = URL.createObjectURL(blob);
+          } catch (fetchError) {
+            console.warn('Failed to fetch worker script, trying direct URL:', fetchError);
+            // Fall back to direct URL (will fail with CORS but worth trying)
+          }
+        }
+
+        const worker = new Worker(workerUrl);
 
         const poolWorker: PoolWorker = {
           worker,
