@@ -147,7 +147,9 @@ const pool = WorkerPool.getInstance(4, '/custom/worker.js');
 
 #### `init(options?)`
 
-Initialize the worker pool. Must be called before analysis.
+Initialize the worker pool. Must be called before analysis. Starts one worker; use `warmup()` to start the rest.
+
+Concurrent calls share one startup, and the options of the first call apply. If `destroy()` is called before startup finishes, the promise rejects with [`WorkerPoolDestroyedError`](#workerpooldestroyederror).
 
 **Parameters:**
 - `options?: WorkerPoolInitOptions` - Worker initialization options (defaults to unpkg CDN)
@@ -181,6 +183,8 @@ await pool.init({
 #### `warmup()`
 
 Pre-create all workers up to maxWorkers. Call during app initialization to eliminate worker creation overhead for streaming workloads.
+
+Rejects as soon as one worker fails to start. Workers that started successfully stay in the pool, and calling `warmup()` again only starts the missing ones. Concurrent calls share one warmup. Rejects with [`WorkerPoolDestroyedError`](#workerpooldestroyederror) if `destroy()` is called first.
 
 **Returns:** `Promise<void>`
 
@@ -307,13 +311,30 @@ console.log(`Queue: ${stats.queuedJobs} jobs waiting`);
 
 #### `destroy()`
 
-Terminate all workers and clean up resources.
+Terminate all workers, including workers that are still starting, and clean up resources. Pending `init()`, `warmup()`, and analysis promises reject with [`WorkerPoolDestroyedError`](#workerpooldestroyederror). The next `getInstance()` call returns a new pool.
 
 **Example:**
 ```typescript
 // Clean up when done
 pool.destroy();
 ```
+
+---
+
+### WorkerPoolDestroyedError
+
+Error used to reject pending `init()`, `warmup()`, and analysis promises when `destroy()` is called. Its `name` is `'WorkerPoolDestroyedError'`. Ignore it when destroying the pool during cleanup, for example when a component unmounts while the pool is still starting.
+
+```typescript
+import { WorkerPool, WorkerPoolDestroyedError } from 'lip-sync-engine';
+
+pool.init().catch(error => {
+  if (error instanceof WorkerPoolDestroyedError) return; // Cancelled by destroy()
+  console.error('WorkerPool failed to start:', error);
+});
+```
+
+If a worker crashes during analysis, the job it was running rejects. If every worker has failed, queued jobs reject and the pool must be started again with `init()`.
 
 ---
 
@@ -371,7 +392,7 @@ Get current streaming statistics.
 
 **Returns:** `StreamAnalyzerStats`
 - `chunksAdded: number` - Total chunks added so far
-- `chunksCompleted: number` - Chunks that finished processing
+- `chunksCompleted: number` - Chunks that finished processing, successfully or with an error
 - `poolStats: WorkerPoolStats` - Underlying pool statistics
 
 **Example:**

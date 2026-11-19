@@ -53,6 +53,10 @@ export function useLipSyncEngine() {
   const workerPoolRef = useRef<WorkerPool | null>(null);
 
   useEffect(() => {
+    // Set by cleanup. A startup that is still running when the mode changes or
+    // the component unmounts is cancelled by destroy(), so ignore its outcome.
+    let cancelled = false;
+
     const initialize = async () => {
       try {
         // Only initialize LipSyncEngine for single thread mode
@@ -82,9 +86,11 @@ export function useLipSyncEngine() {
           }
         }
 
+        if (cancelled) return;
         setIsInitialized(true);
         console.log('Initialization complete');
       } catch (err) {
+        if (cancelled) return;
         console.error('Initialization error:', err);
         setError(err as Error);
       }
@@ -92,8 +98,10 @@ export function useLipSyncEngine() {
 
     initialize();
 
-    // Cleanup on unmount
+    // Cleanup on unmount or mode change
     return () => {
+      cancelled = true;
+      setIsInitialized(false);
       lipSyncEngineRef.current?.destroy();
       workerPoolRef.current?.destroy();
     };
