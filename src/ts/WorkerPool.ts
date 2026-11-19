@@ -30,6 +30,10 @@ export class WorkerPool {
   private static instance: WorkerPool | null = null;
 
   private workers: PoolWorker[] = [];
+  /** Workers that are starting but have not reported ready, with their failure handler */
+  private pendingWorkers: Map<PoolWorker, (error: Error) => void> = new Map();
+  /** Incremented by destroy() so workers started before it can never join the pool */
+  private generation = 0;
   private queue: PendingJob[] = [];
   private inFlightJobs: Map<number, PendingJob> = new Map();
   private nextJobId = 0;
@@ -127,77 +131,117 @@ export class WorkerPool {
       return; // Already at max workers
     }
 
-    // Create remaining workers in parallel
+    // Create remaining workers in parallel. Wait for every worker to settle
+    // so a failure never leaves other workers starting in the background.
     const promises: Promise<PoolWorker>[] = [];
     for (let i = 0; i < workersToCreate; i++) {
       promises.push(this.createWorker());
     }
 
-    await Promise.all(promises);
+    const results = await Promise.allSettled(promises);
+    const failure = results.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected'
+    );
+    if (failure) {
+      throw failure.reason;
+    }
   }
 
   /**
-   * Create a new worker and initialize it
+   * Resolve the URL used to start a worker.
+   * Cross-origin (CDN) scripts are fetched and wrapped in a blob URL.
+   */
+  private async resolveWorkerUrl(): Promise<string> {
+    const workerUrl = this.workerScriptUrl;
+    if (workerUrl.startsWith('http://') || workerUrl.startsWith('https://')) {
+      try {
+        const response = await fetch(workerUrl);
+        const blob = await response.blob();
+        return URL.createObjectURL(blob);
+      } catch (fetchError) {
+        console.warn('Failed to fetch worker script, trying direct URL:', fetchError);
+        // Fall back to direct URL (will fail with CORS but worth trying)
+      }
+    }
+    return workerUrl;
+  }
+
+  /**
+   * Create a new worker and initialize it.
+   *
+   * The returned promise always settles: it resolves when the worker reports
+   * `ready`, and rejects (terminating the worker) on an init error, a load
+   * error, or when the pool is destroyed before the worker is ready.
    */
   private async createWorker(): Promise<PoolWorker> {
-    return new Promise(async (resolve, reject) => {
-      try {
-        // If the worker URL is from a CDN (cross-origin), fetch it and create a blob URL
-        let workerUrl = this.workerScriptUrl;
-        if (workerUrl.startsWith('http://') || workerUrl.startsWith('https://')) {
-          try {
-            const response = await fetch(workerUrl);
-            const blob = await response.blob();
-            workerUrl = URL.createObjectURL(blob);
-          } catch (fetchError) {
-            console.warn('Failed to fetch worker script, trying direct URL:', fetchError);
-            // Fall back to direct URL (will fail with CORS but worth trying)
-          }
+    const generation = this.generation;
+    const workerUrl = await this.resolveWorkerUrl();
+
+    if (generation !== this.generation) {
+      throw new Error('WorkerPool destroyed');
+    }
+
+    return new Promise<PoolWorker>((resolve, reject) => {
+      const worker = new Worker(workerUrl);
+
+      const poolWorker: PoolWorker = {
+        worker,
+        busy: false,
+        ready: false
+      };
+
+      let settled = false;
+
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        this.pendingWorkers.delete(poolWorker);
+        worker.onmessage = null;
+        worker.onerror = null;
+        worker.terminate();
+        reject(error);
+      };
+
+      this.pendingWorkers.set(poolWorker, fail);
+
+      worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+        const message = event.data;
+
+        if (poolWorker.ready) {
+          this.handleWorkerMessage(poolWorker, message);
+          return;
         }
 
-        const worker = new Worker(workerUrl);
-
-        const poolWorker: PoolWorker = {
-          worker,
-          busy: false,
-          ready: false
-        };
-
-        // Set up message handler
-        worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
-          this.handleWorkerMessage(poolWorker, event.data);
-        };
-
-        worker.onerror = (error) => {
-          console.error('Worker error:', error);
-          this.removeWorker(poolWorker);
-        };
-
-        // Wait for worker to be ready
-        const initHandler = (event: MessageEvent<WorkerResponse>) => {
-          if (event.data.type === 'ready') {
-            poolWorker.ready = true;
-            this.workers.push(poolWorker);
-            worker.removeEventListener('message', initHandler);
-            resolve(poolWorker);
-          } else if (event.data.type === 'error') {
-            worker.removeEventListener('message', initHandler);
-            reject(new Error(event.data.error || 'Worker initialization failed'));
+        if (message.type === 'ready') {
+          if (generation !== this.generation) {
+            fail(new Error('WorkerPool destroyed'));
+            return;
           }
-        };
+          settled = true;
+          this.pendingWorkers.delete(poolWorker);
+          poolWorker.ready = true;
+          this.workers.push(poolWorker);
+          resolve(poolWorker);
+        } else if (message.type === 'error') {
+          fail(new Error(message.error || 'Worker initialization failed'));
+        }
+      };
 
-        worker.addEventListener('message', initHandler);
+      worker.onerror = (event: ErrorEvent) => {
+        if (!poolWorker.ready) {
+          fail(new Error(`Worker failed to load: ${event.message || 'unknown error'}`));
+          return;
+        }
+        console.error('Worker error:', event);
+        this.removeWorker(poolWorker);
+      };
 
-        // Send init message
-        const initMessage: WorkerRequest = {
-          type: 'init',
-          ...this.wasmPaths
-        };
-        worker.postMessage(initMessage);
-
-      } catch (error) {
-        reject(error);
-      }
+      // Send init message
+      const initMessage: WorkerRequest = {
+        type: 'init',
+        ...this.wasmPaths
+      };
+      worker.postMessage(initMessage);
     });
   }
 
@@ -420,7 +464,15 @@ export class WorkerPool {
     });
     this.inFlightJobs.clear();
 
-    // Terminate all workers
+    // Invalidate workers that are still fetching their script or starting
+    this.generation++;
+
+    // Terminate workers that have not reported ready yet and reject their startup
+    const pendingFailures = Array.from(this.pendingWorkers.values());
+    this.pendingWorkers.clear();
+    pendingFailures.forEach(fail => fail(new Error('WorkerPool destroyed')));
+
+    // Terminate all ready workers
     this.workers.forEach(poolWorker => {
       poolWorker.worker.terminate();
     });
