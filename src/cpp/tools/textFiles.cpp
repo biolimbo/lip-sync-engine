@@ -1,6 +1,8 @@
 #include "textFiles.h"
 #include <format.h>
+#include <exception>
 #include <fstream>
+#include <stdexcept>
 #include "stringTools.h"
 
 using std::string;

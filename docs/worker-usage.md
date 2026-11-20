@@ -215,26 +215,33 @@ await pool.analyzeChunks(chunks);
 ### React
 
 ```typescript
-import { WorkerPool } from 'lip-sync-engine';
-import { useState, useEffect } from 'react';
+import { WorkerPool, WorkerPoolDestroyedError } from 'lip-sync-engine';
+import { useState, useEffect, useRef } from 'react';
 
 function App() {
-  const [pool] = useState(() => WorkerPool.getInstance());
+  const poolRef = useRef<WorkerPool | null>(null);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Initialize on mount
-    pool.init().catch(console.error);
+    // Get the pool inside the effect, so a remount after cleanup gets a fresh one
+    const pool = WorkerPool.getInstance();
+    poolRef.current = pool;
+
+    pool.init().catch(error => {
+      // destroy() in cleanup cancels a startup that is still running
+      if (!(error instanceof WorkerPoolDestroyedError)) console.error(error);
+    });
 
     // Cleanup on unmount
     return () => pool.destroy();
-  }, [pool]);
+  }, []);
 
   const handleAnalyze = async (pcm16: Int16Array) => {
+    if (!poolRef.current) return;
     setLoading(true);
     try {
-      const result = await pool.analyze(pcm16, {
+      const result = await poolRef.current.analyze(pcm16, {
         dialogText: "Hello world"
       });
       setResult(result);
