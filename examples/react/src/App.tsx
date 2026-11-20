@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { recordAudio, loadAudio } from 'lip-sync-engine';
 import type { MouthCue } from 'lip-sync-engine';
-import { useLipSyncEngine } from './hooks/useLipSyncEngine';
+import { useLipSyncEngine, StartupError } from './hooks/useLipSyncEngine';
 import type { ExecutionMode } from './hooks/useLipSyncEngine';
 import './App.css';
 
@@ -64,6 +64,10 @@ function App() {
   const animationFrameRef = useRef<number | null>(null);
 
   const busy = isAnalyzing || isRecording;
+  // Recording and loading work while the mode starts (analyze() waits for it),
+  // but not after the mode failed to start
+  const canAnalyze = !busy && !initError;
+  const initFailureText = initError ? startupFailureMessage(initError, mode) : '';
 
   const addLog = (message: string, type: LogEntry['type'] = 'info') => {
     const timestamp = `[${new Date().toLocaleTimeString()}]`;
@@ -78,7 +82,7 @@ function App() {
   // so skip a message identical to the previous one.
   useEffect(() => {
     const message = initError
-      ? `Failed to initialize: ${initError.message}. Reload the page to retry.`
+      ? `Failed to initialize ${modeLabel(mode)}: ${initFailureText}`
       : isInitialized
         ? `Ready (${modeLabel(mode)})`
         : `Initializing (${modeLabel(mode)})...`;
@@ -170,7 +174,8 @@ function App() {
       });
       addLog(`Analyzed in ${Math.round(m.executionTime)} ms: ${m.cuesCount} cues (${modeLabel(mode)})`, 'success');
     } catch (err) {
-      addLog(`Analysis failed: ${errorMessage(err)}`, 'error');
+      // A startup failure is already logged and shown as initError
+      if (!(err instanceof StartupError)) addLog(`Analysis failed: ${errorMessage(err)}`, 'error');
     }
   };
 
@@ -229,7 +234,7 @@ function App() {
     : '';
   const statusText = isRecording ? 'Recording. Speak now.'
     : isAnalyzing ? 'Analyzing audio...'
-    : initError ? `Failed to initialize: ${initError.message}. Reload the page to retry.`
+    : initError ? 'Failed to initialize'
     : !isInitialized ? 'Initializing...'
     : 'Ready to analyze audio';
 
@@ -313,18 +318,18 @@ function App() {
         <div className="controls">
           <button
             onClick={handleRecord}
-            disabled={busy}
+            disabled={!canAnalyze}
             className="btn"
           >
             {isRecording ? 'Recording...' : `Record Audio (${recordingDuration} s)`}
           </button>
-          <label className={`btn ${busy ? 'disabled' : ''}`}>
+          <label className={`btn ${canAnalyze ? '' : 'disabled'}`} aria-disabled={!canAnalyze}>
             Load Audio File
             <input
               type="file"
               accept="audio/*"
               onChange={handleFileUpload}
-              disabled={busy}
+              disabled={!canAnalyze}
               hidden
             />
           </label>
@@ -394,13 +399,17 @@ function App() {
               {result.mouthCues.map((cue, index) => (
                 <div key={index} className="cue">
                   <span className="cue-time">
-                    {cue.start.toFixed(2)}-{cue.end.toFixed(2)} s
+                    {cue.start.toFixed(2)} s to {cue.end.toFixed(2)} s
                   </span>
                   <span className="cue-value">{cue.value}</span>
                 </div>
               ))}
             </div>
           </div>
+        )}
+
+        {initError && (
+          <div className="error">{initFailureText}</div>
         )}
 
         {error && (
@@ -433,6 +442,18 @@ function modeLabel(mode: ExecutionMode): string {
     case 'chunked': return 'Chunked';
     case 'streaming': return 'Streaming';
   }
+}
+
+/**
+ * Error text for a mode that failed to start. The library keeps a failed WASM
+ * load, so Single Thread needs a reload; a worker pool that failed to start
+ * tries again the next time a worker mode is selected.
+ */
+function startupFailureMessage(error: Error, mode: ExecutionMode): string {
+  const message = error.message.replace(/\.+$/, '');
+  return mode === 'single'
+    ? `${message}. Reload the page to retry.`
+    : `${message}. Switch modes or reload the page to retry.`;
 }
 
 function seconds(pcm16: Int16Array): string {

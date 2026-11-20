@@ -74,11 +74,11 @@ function MyComponent() {
   const { analyze, result, isAnalyzing, isInitialized, initError, mode, setMode } = useLipSyncEngine();
 
   const handleRecord = async () => {
-    const { pcm16 } = await recordAudio(5000); // mono 16 kHz Int16
     try {
+      const { pcm16 } = await recordAudio(5000); // mono 16 kHz Int16
       await analyze(pcm16, { dialogText: 'Hello world', sampleRate: 16000 });
     } catch {
-      // analyze() also sets `error`
+      // Recording failed, or analyze() failed and set `error` or `initError`
     }
   };
 
@@ -90,17 +90,21 @@ function MyComponent() {
         <option value="chunked">Chunked</option>
         <option value="streaming">Streaming</option>
       </select>
-      <button onClick={handleRecord} disabled={!isInitialized || isAnalyzing}>
+      {/* analyze() waits for a mode that is still starting */}
+      <button onClick={handleRecord} disabled={isAnalyzing || initError !== null}>
         {isAnalyzing ? 'Analyzing...' : 'Record 5 s'}
       </button>
-      {initError && <p>Failed to initialize: {initError.message}. Reload the page to retry.</p>}
+      {initError && <p>Failed to initialize: {initError.message}</p>}
+      {!initError && !isInitialized && <p>Initializing...</p>}
       {result && <p>{result.mouthCues.length} cues</p>}
     </div>
   );
 }
 ```
 
-`analyze()` resolves with the result and its metrics, and throws on failure after setting `error`. `initError` is set when the selected mode fails to start. The library keeps a failed WASM load, so reload the page to retry.
+Selecting a mode starts what it needs: the engine for Single Thread, one worker for Web Worker, and all workers for Chunked and Streaming. `isInitialized` turns true when that startup finishes. `analyze()` also starts the mode if needed, so recording can begin while the mode is still starting.
+
+`analyze()` resolves with the result and its metrics. It throws on failure: it sets `initError` (and throws a `StartupError`) when the selected mode fails to start, and sets `error` when the analysis itself fails. The library keeps a failed WASM load, so after a Single Thread failure reload the page to retry. A worker pool that failed to start tries again when a worker mode is selected again, so for the worker modes switch modes or reload the page.
 
 ### Mouth Shape Animation
 

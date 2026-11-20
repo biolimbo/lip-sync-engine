@@ -75,8 +75,14 @@
       text-align: left;
     }
 
-    .mode-btn:hover {
+    .mode-btn:hover:not(:disabled) {
       border-color: #4a9eff;
+    }
+
+    .mode-btn:disabled {
+      background: #0f0f0f;
+      color: #888;
+      opacity: 0.5;
     }
 
     .mode-btn.active {
@@ -224,6 +230,13 @@
       border-color: #2a4a2a;
     }
 
+    .status.recording,
+    .status.error {
+      background: #2a1a1a;
+      color: #ff6b6b;
+      border-color: #4a2a2a;
+    }
+
     .viseme-display {
       background: #0f0f0f;
       border-radius: 8px;
@@ -287,6 +300,7 @@
       padding: 8px 16px;
       font-size: 13px;
       min-width: auto;
+      flex: none;
     }
 
     .play-btn:hover:not(:disabled) {
@@ -369,7 +383,7 @@
       <h1>lip-sync-engine</h1>
       <p class="subtitle">
         Vanilla JavaScript: main thread, worker and chunked modes.
-        For streaming, see <a href="../stream-example.ts">stream-example.ts</a>.
+        For streaming, see <a href="https://github.com/biolimbo/lip-sync-engine/blob/main/examples/stream-example.ts">stream-example.ts</a>.
       </p>
     </header>
 
@@ -401,19 +415,19 @@
         </div>
 
         <div class="slider-group">
-          <label for="recordingDuration">Recording Duration: <span id="recordingDurationValue">10</span>s</label>
+          <label for="recordingDuration">Recording Duration: <span id="recordingDurationValue">10</span> s</label>
           <input type="range" id="recordingDuration" value="10" min="5" max="60" step="5">
           <small>5 to 60 seconds</small>
         </div>
 
         <div class="slider-group" id="chunkSettings" style="display:none;">
-          <label for="chunkSize">Chunk Size: <span id="chunkSizeValue">5</span>s</label>
+          <label for="chunkSize">Chunk Size: <span id="chunkSizeValue">5</span> s</label>
           <input type="range" id="chunkSize" value="5" min="1" max="10" step="1">
           <small>Smaller chunks run more in parallel; larger chunks give more accurate cues near chunk edges</small>
         </div>
 
         <div class="controls">
-          <button id="recordBtn" disabled>Record (10s)</button>
+          <button id="recordBtn" disabled>Record (10 s)</button>
           <button id="loadBtn" disabled>Load File</button>
           <input type="file" id="fileInput" accept="audio/*">
         </div>
@@ -457,13 +471,13 @@
             <img src="../assets/visemes/G.png" alt="G" data-viseme="G">
             <img src="../assets/visemes/H.png" alt="H" data-viseme="H">
           </div>
-          <div class="viseme-label" id="visemeLabel">Idle (X)</div>
+          <div class="viseme-label" id="visemeLabel">X: Idle</div>
         </div>
 
         <div id="results" class="results" style="display:none;">
           <div class="results-header">
             <h3>Mouth Cues</h3>
-            <button id="playBtn" class="play-btn">▶ Play</button>
+            <button id="playBtn" class="play-btn">Play</button>
           </div>
           <div id="cuesList" class="cues-list"></div>
         </div>
@@ -522,6 +536,10 @@
 
     let currentMode = 'single';
     let ready = false;
+    let busy = false; // recording or analyzing
+    // Set when chunked mode's extra workers failed to start. Selecting chunked
+    // mode again tries again (a failed pool startup is not kept).
+    let warmupError = null;
     let lipSyncEngine = null;
     let workerPool = null;
     let lastResult = null;
@@ -548,9 +566,30 @@
       errorEl.style.display = 'none';
     }
 
+    function startupFailureText(err, hint) {
+      return `${String(err?.message ?? err).replace(/\.+$/, '')}. ${hint}`;
+    }
+
+    // Record and Load need the engines loaded and are off while busy or after
+    // the selected mode failed to start. Mode buttons are off while busy.
+    function updateControls() {
+      const blocked = !ready || busy || (currentMode === 'chunked' && warmupError !== null);
+      recordBtn.disabled = blocked;
+      loadBtn.disabled = blocked;
+      modeButtons.forEach(b => { b.disabled = busy; });
+      dialogTextInput.disabled = busy;
+      recordingDurationInput.disabled = busy;
+      chunkSizeInput.disabled = busy;
+    }
+
+    function setBusy(value) {
+      busy = value;
+      updateControls();
+    }
+
     recordingDurationInput.addEventListener('input', (e) => {
       recordingDurationValueEl.textContent = e.target.value;
-      recordBtn.textContent = `Record (${e.target.value}s)`;
+      recordBtn.textContent = `Record (${e.target.value} s)`;
     });
 
     chunkSizeInput.addEventListener('input', (e) => {
@@ -559,14 +598,31 @@
 
     modeButtons.forEach(btn => {
       btn.addEventListener('click', () => {
+        if (busy || btn.dataset.mode === currentMode) return;
         modeButtons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         currentMode = btn.dataset.mode;
         chunkSettings.style.display = currentMode === 'chunked' ? 'block' : 'none';
         workerMetricEl.style.display = currentMode === 'chunked' ? 'flex' : 'none';
-        if (currentMode === 'chunked' && ready) startAllWorkers();
+        if (ready) {
+          if (warmupError) {
+            // Leaving chunked mode after its workers failed to start
+            warmupError = null;
+            hideError();
+            setStatus(READY_TEXT, 'success');
+          }
+          if (currentMode === 'chunked') startAllWorkers();
+        }
+        updateControls();
       });
     });
+
+    function failWarmup(err) {
+      warmupError = err;
+      showError(startupFailureText(err, 'Switch modes or reload the page to retry.'));
+      setStatus('Failed to initialize', 'error');
+      updateControls();
+    }
 
     // init() starts one worker; chunked mode needs the rest, which warmup()
     // starts. Concurrent warmup() calls share one startup, and once all
@@ -577,9 +633,10 @@
         await workerPool.warmup();
         if (version === statusVersion) setStatus(READY_TEXT, 'success');
       } catch (err) {
-        if (version === statusVersion) {
-          showError(`Worker startup failed: ${err.message}`);
-          setStatus('Worker startup failed', '');
+        if (currentMode === 'chunked') {
+          failWarmup(err);
+        } else if (version === statusVersion) {
+          setStatus(READY_TEXT, 'success'); // the selected mode does not need these workers
         }
       }
     }
@@ -598,8 +655,7 @@
         await workerPool.init({ ...WASM_PATHS, workerScriptUrl: `${DIST}worker.js` });
 
         ready = true;
-        recordBtn.disabled = false;
-        loadBtn.disabled = false;
+        updateControls();
         if (currentMode === 'chunked') {
           startAllWorkers();
         } else {
@@ -607,8 +663,8 @@
         }
       } catch (err) {
         // The library keeps a failed WASM load, so only a reload retries it.
-        showError(`Initialization failed (reload the page to retry): ${err.message}`);
-        setStatus('Initialization failed', '');
+        showError(startupFailureText(err, 'Reload the page to retry.'));
+        setStatus('Failed to initialize', 'error');
       }
     }
 
@@ -652,7 +708,12 @@
           const chunks = splitIntoChunks(pcm16, Number(chunkSizeInput.value));
           const { totalWorkers, maxWorkers } = workerPool.getStats();
           if (totalWorkers < maxWorkers) setStatus('Starting workers...', 'analyzing');
-          await workerPool.warmup(); // not timed: the metric measures analysis only
+          try {
+            await workerPool.warmup(); // not timed: the metric measures analysis only
+          } catch (err) {
+            failWarmup(err);
+            return;
+          }
           setStatus(`Analyzing ${chunks.length} chunks in parallel...`, 'analyzing');
           startTime = performance.now();
           const results = await workerPool.analyzeChunks(chunks, options);
@@ -671,13 +732,13 @@
           workersUsedEl.textContent = Math.min(chunks.length, workerPool.getStats().totalWorkers);
         }
 
-        const execTime = ((performance.now() - startTime) / 1000).toFixed(2);
-        execTimeEl.textContent = `${execTime}s`;
+        const execTime = Math.round(performance.now() - startTime);
+        execTimeEl.textContent = `${execTime} ms`;
         cuesCountEl.textContent = result.mouthCues.length;
-        audioDurationEl.textContent = `${(pcm16.length / SAMPLE_RATE).toFixed(2)}s`;
+        audioDurationEl.textContent = `${(pcm16.length / SAMPLE_RATE).toFixed(2)} s`;
 
         displayResults(result, audioBuffer);
-        setStatus(`Analysis complete in ${execTime}s`, 'success');
+        setStatus(`Analysis complete in ${execTime} ms`, 'success');
 
       } catch (err) {
         showError(`Analysis failed: ${err.message}`);
@@ -696,7 +757,7 @@
         const cueEl = document.createElement('div');
         cueEl.className = 'cue';
         cueEl.innerHTML = `
-          <span class="cue-time">${cue.start.toFixed(2)}s to ${cue.end.toFixed(2)}s</span>
+          <span class="cue-time">${cue.start.toFixed(2)} s to ${cue.end.toFixed(2)} s</span>
           <span class="cue-value">${cue.value}</span>
         `;
         cuesListEl.appendChild(cueEl);
@@ -710,7 +771,7 @@
       images.forEach(img => {
         img.classList.toggle('active', img.dataset.viseme === viseme);
       });
-      visemeLabelEl.textContent = `${visemeNames[viseme]} (${viseme})`;
+      visemeLabelEl.textContent = `${viseme}: ${visemeNames[viseme]}`;
     }
 
     function stopPlayback() {
@@ -724,16 +785,14 @@
         currentPlayback = null;
       }
       setViseme('X');
-      playBtn.disabled = false;
-      playBtn.textContent = '▶ Play';
+      playBtn.textContent = 'Play';
     }
 
     function playAnimation(mouthCues, audioBuffer) {
       if (!audioBuffer) return;
       stopPlayback();
 
-      playBtn.disabled = true;
-      playBtn.textContent = 'Playing...';
+      playBtn.textContent = 'Stop';
 
       if (!audioContext) audioContext = new AudioContext();
       audioContext.resume();
@@ -768,35 +827,44 @@
       source.onended = () => {
         currentPlayback = null;
         setViseme('X');
-        playBtn.disabled = false;
-        playBtn.textContent = '▶ Play';
+        playBtn.textContent = 'Play';
       };
     }
 
     playBtn.addEventListener('click', () => {
-      if (lastResult && lastAudioBuffer) {
+      if (currentPlayback) {
+        stopPlayback();
+      } else if (lastResult && lastAudioBuffer) {
         playAnimation(lastResult.mouthCues, lastAudioBuffer);
       }
     });
 
+    // Clear the previous result and playback before new audio arrives
+    function startOver() {
+      stopPlayback();
+      hideError();
+      resultsEl.style.display = 'none';
+      lastResult = null;
+      lastAudioBuffer = null;
+    }
+
     recordBtn.addEventListener('click', async () => {
+      startOver();
+      setBusy(true);
       try {
-        recordBtn.disabled = true;
-        loadBtn.disabled = true;
-        hideError();
         const recordingDuration = Number(recordingDurationInput.value);
-        setStatus(`Recording for ${recordingDuration} seconds. Speak now.`, 'analyzing');
-        resultsEl.style.display = 'none';
-
-        const { pcm16, audioBuffer } = await recordAudio(recordingDuration * 1000);
-        await analyze(pcm16, audioBuffer);
-
-      } catch (err) {
-        showError(`Recording failed: ${err.message}`);
-        setStatus('Recording failed', '');
+        setStatus(`Recording for ${recordingDuration} seconds. Speak now.`, 'recording');
+        let recording;
+        try {
+          recording = await recordAudio(recordingDuration * 1000);
+        } catch (err) {
+          showError(`Recording failed: ${err.message}`);
+          setStatus('Recording failed', '');
+          return;
+        }
+        await analyze(recording.pcm16, recording.audioBuffer);
       } finally {
-        recordBtn.disabled = false;
-        loadBtn.disabled = false;
+        setBusy(false);
       }
     });
 
@@ -806,23 +874,22 @@
       const file = e.target.files[0];
       if (!file) return;
 
+      fileInput.value = ''; // allow loading the same file again
+      startOver();
+      setBusy(true);
       try {
-        recordBtn.disabled = true;
-        loadBtn.disabled = true;
-        hideError();
         setStatus('Loading audio file...', 'analyzing');
-        resultsEl.style.display = 'none';
-
-        const { pcm16, audioBuffer } = await loadAudio(file);
-        await analyze(pcm16, audioBuffer);
-
-      } catch (err) {
-        showError(`Failed to load audio: ${err.message}`);
-        setStatus('Failed to load audio', '');
+        let audio;
+        try {
+          audio = await loadAudio(file);
+        } catch (err) {
+          showError(`Failed to load audio: ${err.message}`);
+          setStatus('Failed to load audio', '');
+          return;
+        }
+        await analyze(audio.pcm16, audio.audioBuffer);
       } finally {
-        recordBtn.disabled = false;
-        loadBtn.disabled = false;
-        fileInput.value = '';
+        setBusy(false);
       }
     });
 

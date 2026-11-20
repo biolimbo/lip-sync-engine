@@ -2,7 +2,7 @@
   import { onDestroy } from 'svelte';
   import { recordAudio, loadAudio } from 'lip-sync-engine';
   import type { LipSyncEngineResult, MouthCue } from 'lip-sync-engine';
-  import { lipSyncEngineStore } from './stores/lipSyncEngine';
+  import { lipSyncEngineStore, StartupError } from './stores/lipSyncEngine';
   import type { ExecutionMode } from './stores/lipSyncEngine';
 
   interface LogEntry {
@@ -61,10 +61,21 @@
   // Startup state of the selected mode
   $: initStatus = $lipSyncEngineStore.initError ? 'failed'
     : $lipSyncEngineStore.isInitialized ? 'ready'
+    : $lipSyncEngineStore.stopped ? 'stopped'
     : 'initializing';
+  // The library keeps a failed WASM load, so Single Thread needs a reload. A
+  // worker pool that failed to start tries again when a worker mode is selected.
   $: initFailure = $lipSyncEngineStore.initError
-    ? `Failed to initialize: ${$lipSyncEngineStore.initError.message.replace(/\.+$/, '')}. Reload the page to retry.`
+    ? `${$lipSyncEngineStore.initError.message.replace(/\.+$/, '')}. ${
+        $lipSyncEngineStore.mode === 'single'
+          ? 'Reload the page to retry.'
+          : 'Switch modes or reload the page to retry.'
+      }`
     : '';
+  $: busy = $lipSyncEngineStore.isAnalyzing || isRecording;
+  // Recording and loading work while the mode starts (analyze() waits for it),
+  // but not after the mode failed to start
+  $: canAnalyze = !busy && initStatus !== 'failed';
 
   // Log each startup step of the selected mode once
   let lastInitLog = '';
@@ -74,7 +85,8 @@
       lastInitLog = key;
       const label = modeLabel($lipSyncEngineStore.mode);
       if (initStatus === 'ready') addLog(`${label} ready`, 'success');
-      else if (initStatus === 'failed') addLog(initFailure, 'error');
+      else if (initStatus === 'failed') addLog(`Failed to initialize ${label}: ${initFailure}`, 'error');
+      else if (initStatus === 'stopped') addLog(`${label} stopped (starts on next analysis)`);
       else addLog(`Initializing ${label}...`);
     }
   }
@@ -146,29 +158,34 @@
   async function runAnalysis(pcm16: Int16Array) {
     const text = dialogText.trim();
     const duration = (pcm16.length / SAMPLE_RATE).toFixed(2);
-    addLog(`Analyzing ${duration}s of audio${text ? ' with dialog text' : ''}...`);
+    addLog(`Analyzing ${duration} s of audio${text ? ' with dialog text' : ''}...`);
     try {
       const result = await lipSyncEngineStore.analyze(pcm16, {
         dialogText: text || undefined,
         sampleRate: SAMPLE_RATE,
       });
-      if (result) addLog(`Analysis complete: ${result.mouthCues.length} mouth cues`, 'success');
+      const metrics = $lipSyncEngineStore.metrics;
+      if (result && metrics) {
+        addLog(`Analyzed in ${Math.round(metrics.executionTime)} ms: ${result.mouthCues.length} cues`, 'success');
+      }
     } catch (err) {
-      addLog(`Analysis failed: ${errorMessage(err)}`, 'error');
+      // A startup failure is already logged and shown as initError
+      if (!(err instanceof StartupError)) addLog(`Analysis failed: ${errorMessage(err)}`, 'error');
     }
   }
 
   async function handleRecord() {
+    stopPlayback();
     isRecording = true;
     lipSyncEngineStore.reset();
     audioBuffer = null;
     let pcm16: Int16Array;
     try {
-      addLog(`Recording ${$lipSyncEngineStore.recordingDuration}s (allow microphone access if asked)...`);
+      addLog(`Recording ${$lipSyncEngineStore.recordingDuration} s (allow microphone access if asked)...`);
       const recording = await recordAudio($lipSyncEngineStore.recordingDuration * 1000);
       pcm16 = recording.pcm16;
       audioBuffer = recording.audioBuffer;
-      addLog(`Recorded ${(pcm16.length / SAMPLE_RATE).toFixed(2)}s of audio`, 'success');
+      addLog(`Recorded ${(pcm16.length / SAMPLE_RATE).toFixed(2)} s of audio`, 'success');
     } catch (err) {
       addLog(`Recording failed: ${errorMessage(err)}`, 'error');
       return;
@@ -184,6 +201,7 @@
     target.value = '';
     if (!file) return;
 
+    stopPlayback();
     lipSyncEngineStore.reset();
     audioBuffer = null;
     let pcm16: Int16Array;
@@ -192,7 +210,7 @@
       const loaded = await loadAudio(file);
       pcm16 = loaded.pcm16;
       audioBuffer = loaded.audioBuffer;
-      addLog(`Decoded ${(pcm16.length / SAMPLE_RATE).toFixed(2)}s of audio`, 'success');
+      addLog(`Decoded ${(pcm16.length / SAMPLE_RATE).toFixed(2)} s of audio`, 'success');
     } catch (err) {
       addLog(`Could not load the file: ${errorMessage(err)}`, 'error');
       return;
@@ -231,7 +249,7 @@
         class="mode-btn"
         class:active={$lipSyncEngineStore.mode === 'single'}
         on:click={() => handleModeChange('single')}
-        disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
+        disabled={busy}
       >
         <div class="mode-title">Single Thread</div>
         <div class="mode-desc">Main thread (blocks the UI)</div>
@@ -240,7 +258,7 @@
         class="mode-btn"
         class:active={$lipSyncEngineStore.mode === 'worker'}
         on:click={() => handleModeChange('worker')}
-        disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
+        disabled={busy}
       >
         <div class="mode-title">Web Worker</div>
         <div class="mode-desc">One worker (the UI stays responsive)</div>
@@ -249,7 +267,7 @@
         class="mode-btn"
         class:active={$lipSyncEngineStore.mode === 'chunked'}
         on:click={() => handleModeChange('chunked')}
-        disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
+        disabled={busy}
       >
         <div class="mode-title">Chunked</div>
         <div class="mode-desc">Splits audio across up to 4 workers</div>
@@ -258,7 +276,7 @@
         class="mode-btn"
         class:active={$lipSyncEngineStore.mode === 'streaming'}
         on:click={() => handleModeChange('streaming')}
-        disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
+        disabled={busy}
       >
         <div class="mode-title">Streaming</div>
         <div class="mode-desc">Chunks with 500 ms context and lookahead</div>
@@ -269,7 +287,7 @@
   <!-- Recording Duration Slider -->
   <div class="settings-panel">
     <label for="recordingDuration">
-      Recording Duration: {$lipSyncEngineStore.recordingDuration}s
+      Recording Duration: {$lipSyncEngineStore.recordingDuration} s
     </label>
     <input
       id="recordingDuration"
@@ -279,15 +297,16 @@
       step="5"
       value={$lipSyncEngineStore.recordingDuration}
       on:input={(e) => lipSyncEngineStore.setRecordingDuration(Number(e.currentTarget.value))}
-      disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
+      disabled={busy}
     />
+    <small>5 to 60 seconds</small>
   </div>
 
   <!-- Chunk size: only in chunked and streaming modes -->
   {#if $lipSyncEngineStore.mode === 'chunked' || $lipSyncEngineStore.mode === 'streaming'}
     <div class="settings-panel">
       <label for="chunkSize">
-        Chunk Size: {$lipSyncEngineStore.chunkSize}s
+        Chunk Size: {$lipSyncEngineStore.chunkSize} s
       </label>
       <input
         id="chunkSize"
@@ -297,7 +316,7 @@
         step="1"
         value={$lipSyncEngineStore.chunkSize}
         on:input={(e) => lipSyncEngineStore.setChunkSize(Number(e.currentTarget.value))}
-        disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
+        disabled={busy}
       />
       <small>
         {$lipSyncEngineStore.mode === 'chunked'
@@ -314,25 +333,25 @@
       bind:value={dialogText}
       type="text"
       placeholder="Enter the text that will be spoken..."
-      disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
+      disabled={busy}
     />
   </div>
 
   <div class="controls">
     <button
       on:click={handleRecord}
-      disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
+      disabled={!canAnalyze}
       class="btn"
     >
-      {isRecording ? 'Recording...' : `Record Audio (${$lipSyncEngineStore.recordingDuration}s)`}
+      {isRecording ? 'Recording...' : `Record Audio (${$lipSyncEngineStore.recordingDuration} s)`}
     </button>
-    <label class="btn">
+    <label class="btn" class:disabled={!canAnalyze} aria-disabled={!canAnalyze}>
       Load Audio File
       <input
         type="file"
         accept="audio/*"
         on:change={handleFileUpload}
-        disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
+        disabled={!canAnalyze}
         style="display: none"
       />
     </label>
@@ -341,12 +360,13 @@
   <div
     class="status"
     class:recording={isRecording}
-    class:failed={!isRecording && !$lipSyncEngineStore.isAnalyzing && initStatus === 'failed'}
-    class:analyzing={$lipSyncEngineStore.isAnalyzing || initStatus === 'initializing'}
+    class:failed={!busy && initStatus === 'failed'}
+    class:analyzing={$lipSyncEngineStore.isAnalyzing || (!isRecording && initStatus === 'initializing')}
   >
     {isRecording ? 'Recording. Speak now.'
       : $lipSyncEngineStore.isAnalyzing ? 'Analyzing audio...'
-      : initStatus === 'failed' ? initFailure
+      : initStatus === 'failed' ? 'Failed to initialize'
+      : initStatus === 'stopped' ? 'Stopped (starts on next analysis)'
       : initStatus === 'initializing' ? 'Initializing...'
       : 'Ready to analyze audio'}
   </div>
@@ -358,7 +378,7 @@
       <div class="metrics-grid">
         <div class="metric">
           <div class="metric-label">Execution Time</div>
-          <div class="metric-value">{$lipSyncEngineStore.metrics.executionTime.toFixed(2)}ms</div>
+          <div class="metric-value">{Math.round($lipSyncEngineStore.metrics.executionTime)} ms</div>
         </div>
         <div class="metric">
           <div class="metric-label">Mouth Cues</div>
@@ -401,7 +421,7 @@
     <div class="results">
       <div class="results-header">
         <h3>Lip Sync Results</h3>
-        <button class="play-btn" on:click={isPlaying ? stopPlayback : handlePlay}>
+        <button class="play-btn" on:click={isPlaying ? stopPlayback : handlePlay} disabled={!audioBuffer}>
           {isPlaying ? 'Stop' : 'Play'}
         </button>
       </div>
@@ -409,13 +429,17 @@
         {#each $lipSyncEngineStore.result.mouthCues as cue}
           <div class="cue">
             <span class="cue-time">
-              {cue.start.toFixed(2)}s to {cue.end.toFixed(2)}s
+              {cue.start.toFixed(2)} s to {cue.end.toFixed(2)} s
             </span>
             <span class="cue-value">{cue.value}</span>
           </div>
         {/each}
       </div>
     </div>
+  {/if}
+
+  {#if initFailure}
+    <div class="error">{initFailure}</div>
   {/if}
 
   {#if $lipSyncEngineStore.error}
@@ -637,18 +661,21 @@
     transition: background 0.2s, transform 0.1s;
     flex: 1;
     min-width: 140px;
+    margin: 0;
+    text-align: center;
   }
 
-  .btn:hover:not(:disabled) {
+  .btn:hover:not(:disabled):not(.disabled) {
     background: #3a8eef;
     transform: translateY(-1px);
   }
 
-  .btn:active:not(:disabled) {
+  .btn:active:not(:disabled):not(.disabled) {
     transform: translateY(0);
   }
 
-  .btn:disabled {
+  .btn:disabled,
+  .btn.disabled {
     background: #2a2a2a;
     color: #666;
     cursor: not-allowed;

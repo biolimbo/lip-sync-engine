@@ -26,6 +26,12 @@ function toError(err: unknown): Error {
   return err instanceof Error ? err : new Error(String(err));
 }
 
+/** Resolve after the browser paints, so a status set just before shows up */
+function nextPaint(): Promise<void> {
+  // requestAnimationFrame runs just before the next paint, and the timeout runs after it
+  return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+}
+
 /**
  * Start what a mode needs. Repeated calls share the library's in-flight
  * startup, so this is safe to call before every analysis.
@@ -75,8 +81,9 @@ export function useLipSyncEngine() {
   const chunkSize = ref(5); // seconds
   const recordingDuration = ref(10); // seconds
   const isInitialized = ref(false);
-  // Set when the selected mode fails to start. The library caches a failed
-  // WASM load, so recovering needs a page reload.
+  // Set when the selected mode fails to start. The library keeps a failed
+  // WASM load, so Single Thread needs a page reload; a worker pool that failed
+  // to start tries again when a worker mode is selected again.
   const initError = ref<Error | null>(null);
 
   // Start what the selected mode needs. Nothing is torn down when the mode
@@ -118,12 +125,15 @@ export function useLipSyncEngine() {
       initError.value = null;
       isInitialized.value = true;
 
-      const startTime = performance.now();
+      let startTime = performance.now();
       let analysisResult: LipSyncEngineResult;
       let performanceMetrics: PerformanceMetrics;
 
       if (currentMode === 'single') {
-        // Runs on the main thread and blocks the UI
+        // Runs on the main thread and blocks the UI, so paint the
+        // "Analyzing" status first
+        await nextPaint();
+        startTime = performance.now();
         analysisResult = await LipSyncEngine.getInstance().analyze(pcm16, options);
         performanceMetrics = {
           executionTime: performance.now() - startTime,

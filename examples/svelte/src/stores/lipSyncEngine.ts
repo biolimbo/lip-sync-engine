@@ -42,6 +42,23 @@ function toError(err: unknown): Error {
   return err instanceof Error ? err : new Error(String(err));
 }
 
+/** Resolve after the browser paints, so a status set just before shows up */
+function nextPaint(): Promise<void> {
+  // requestAnimationFrame runs just before the next paint, and the timeout runs after it
+  return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+}
+
+/**
+ * Thrown by analyze() when the selected mode fails to start. The failure is
+ * also stored as `initError`, so callers need not show it again.
+ */
+export class StartupError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StartupError';
+  }
+}
+
 function splitIntoChunks(pcm16: Int16Array, chunkSeconds: number, sampleRate: number): Int16Array[] {
   const chunkSamples = Math.round(chunkSeconds * sampleRate);
   const chunks: Int16Array[] = [];
@@ -69,8 +86,14 @@ interface LipSyncEngineState {
   result: LipSyncEngineResult | null;
   isAnalyzing: boolean;
   isInitialized: boolean;
-  /** Set when the selected mode failed to start */
+  /**
+   * Set when the selected mode failed to start. The library keeps a failed
+   * WASM load, so Single Thread needs a page reload; a worker pool that failed
+   * to start tries again when a worker mode is selected again.
+   */
   initError: Error | null;
+  /** True after destroy(), until the next analyze() or mode change starts a mode again */
+  stopped: boolean;
   error: Error | null;
   metrics: PerformanceMetrics | null;
   chunkSize: number;
@@ -88,8 +111,12 @@ interface LipSyncEngineState {
  *   import { recordAudio } from 'lip-sync-engine';
  *
  *   async function handleAnalyze() {
- *     const { pcm16 } = await recordAudio(5000);
- *     await lipSyncEngineStore.analyze(pcm16, { dialogText: 'Hello world', sampleRate: 16000 });
+ *     try {
+ *       const { pcm16 } = await recordAudio(5000);
+ *       await lipSyncEngineStore.analyze(pcm16, { dialogText: 'Hello world', sampleRate: 16000 });
+ *     } catch {
+ *       // Recording failed, or analyze() failed and set `error` or `initError`
+ *     }
  *   }
  * </script>
  *
@@ -98,7 +125,8 @@ interface LipSyncEngineState {
  * <button on:click={() => lipSyncEngineStore.setMode('chunked')}>Chunked</button>
  * <button on:click={() => lipSyncEngineStore.setMode('streaming')}>Streaming</button>
  *
- * <button on:click={handleAnalyze} disabled={$lipSyncEngineStore.isAnalyzing}>
+ * <!-- analyze() waits for a mode that is still starting -->
+ * <button on:click={handleAnalyze} disabled={$lipSyncEngineStore.isAnalyzing || $lipSyncEngineStore.initError !== null}>
  *   {$lipSyncEngineStore.isAnalyzing ? 'Analyzing...' : 'Record & Analyze'}
  * </button>
  *
@@ -118,6 +146,7 @@ function createLipSyncEngineStore() {
     isAnalyzing: false,
     isInitialized: false,
     initError: null,
+    stopped: false,
     error: null,
     metrics: null,
     chunkSize: 5, // seconds
@@ -125,15 +154,20 @@ function createLipSyncEngineStore() {
   });
   const { subscribe, update } = store;
 
-  // Start what a mode needs; ignore the outcome if the mode changed meanwhile
+  // Each startup gets a number, so the outcome of a startup that a mode change
+  // or destroy() superseded is ignored
+  let startId = 0;
+
+  // Start what a mode needs
   const startMode = (mode: ExecutionMode) => {
-    update((state) => ({ ...state, mode, isInitialized: false, initError: null }));
+    const id = ++startId;
+    update((state) => ({ ...state, mode, isInitialized: false, initError: null, stopped: false }));
     prepare(mode).then(
-      () => update((state) => (state.mode === mode ? { ...state, isInitialized: true } : state)),
+      () => update((state) => (id === startId ? { ...state, isInitialized: true } : state)),
       (err) => {
         // destroy() rejects pending startups; that is teardown, not a failure
         if (err instanceof WorkerPoolDestroyedError) return;
-        update((state) => (state.mode === mode ? { ...state, initError: toError(err) } : state));
+        update((state) => (id === startId ? { ...state, initError: toError(err) } : state));
       }
     );
   };
@@ -143,24 +177,37 @@ function createLipSyncEngineStore() {
     subscribe,
 
     /**
-     * Analyze audio in the selected mode. Resolves with the result, or with
-     * null if destroy() ran meanwhile. Throws on failure and sets `error`.
+     * Analyze audio in the selected mode, starting it first if needed.
+     * Resolves with the result, or with null if destroy() ran meanwhile.
+     * Throws on failure: a StartupError (and sets `initError`) when the mode
+     * fails to start, otherwise the analysis error (and sets `error`).
      */
     analyze: async (pcm16: Int16Array, options: LipSyncEngineOptions = {}): Promise<LipSyncEngineResult | null> => {
       const { mode, chunkSize } = get(store);
-      update((state) => ({ ...state, isAnalyzing: true, error: null, metrics: null }));
+      update((state) => ({ ...state, isAnalyzing: true, error: null, metrics: null, stopped: false }));
 
       try {
         const sampleRate = options.sampleRate ?? 16000;
-        await prepare(mode);
+        try {
+          await prepare(mode);
+        } catch (err) {
+          const error = toError(err);
+          if (!(err instanceof WorkerPoolDestroyedError)) {
+            update((state) => (state.mode === mode ? { ...state, initError: error } : state));
+          }
+          throw err instanceof WorkerPoolDestroyedError ? err : new StartupError(error.message);
+        }
         update((state) => (state.mode === mode ? { ...state, isInitialized: true, initError: null } : state));
-        const startTime = performance.now();
 
+        let startTime = performance.now();
         let result: LipSyncEngineResult;
         let performanceMetrics: PerformanceMetrics;
 
         if (mode === 'single') {
-          // Runs on the main thread and blocks the UI
+          // Runs on the main thread and blocks the UI, so paint the
+          // "Analyzing" status first
+          await nextPaint();
+          startTime = performance.now();
           result = await LipSyncEngine.getInstance().analyze(pcm16, options);
           performanceMetrics = {
             executionTime: performance.now() - startTime,
@@ -234,7 +281,11 @@ function createLipSyncEngineStore() {
           return null;
         }
         const error = toError(err);
-        update((state) => ({ ...state, error, isAnalyzing: false }));
+        update((state) => ({
+          ...state,
+          error: error instanceof StartupError ? null : error,
+          isAnalyzing: false
+        }));
         throw error;
       }
     },
@@ -263,12 +314,14 @@ function createLipSyncEngineStore() {
 
     /**
      * Free the engine and terminate the workers (only when lip sync is no
-     * longer needed). The next analyze() starts them again.
+     * longer needed). Sets `stopped`; the next analyze() or mode change
+     * starts the selected mode again.
      */
     destroy: () => {
+      startId++; // ignore startups still in flight
       LipSyncEngine.getInstance().destroy();
       WorkerPool.getInstance().destroy();
-      update((state) => ({ ...state, isInitialized: false }));
+      update((state) => ({ ...state, isInitialized: false, initError: null, stopped: true }));
     },
   };
 }

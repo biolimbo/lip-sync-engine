@@ -33,11 +33,11 @@ If your server sends `.mjs` files with the wrong MIME type (older Python version
 - Record from the microphone (5 to 60 seconds) or load an audio file in any format the browser can decode
 - Optional dialog text for better accuracy
 - Three execution modes:
-  - Single thread: runs on the main thread and blocks the UI
-  - Web worker: runs in one worker, so the UI stays responsive
-  - Chunked workers: splits the audio and analyzes the chunks in parallel on up to 4 workers
+  - Single Thread: runs on the main thread and blocks the UI
+  - Web Worker: runs in one worker, so the UI stays responsive
+  - Chunked: splits the audio and analyzes the chunks in parallel on up to 4 workers
 - Metrics: execution time, cue count, audio duration, and workers used
-- Mouth shape preview synced to audio playback, with a replay button
+- Mouth shape preview synced to audio playback, with Play and Stop controls
 - List of all mouth cues with timestamps
 
 ## Using the Library in Your Own Page
@@ -134,14 +134,31 @@ function setViseme(shape) {
 }
 
 let audioContext = null; // created on the first click, then reused
+let currentSource = null;
+let animationFrame = null;
+
+function stopPlayback() {
+  if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+  animationFrame = null;
+  if (currentSource) {
+    currentSource.onended = null;
+    currentSource.stop();
+    currentSource = null;
+  }
+  setViseme('X');
+}
 
 function playAnimation(mouthCues, audioBuffer) {
+  stopPlayback(); // stop the previous playback and its animation loop
+
   audioContext ??= new AudioContext();
   audioContext.resume(); // a context created outside a user gesture starts suspended
 
   const source = audioContext.createBufferSource();
   source.buffer = audioBuffer;
   source.connect(audioContext.destination);
+  source.onended = () => { currentSource = null; };
+  currentSource = source;
   const startTime = audioContext.currentTime;
   source.start();
 
@@ -151,9 +168,10 @@ function playAnimation(mouthCues, audioBuffer) {
     while (i < mouthCues.length && mouthCues[i].end < elapsed) i++;
     if (i < mouthCues.length) {
       setViseme(mouthCues[i].value);
-      requestAnimationFrame(update);
+      animationFrame = requestAnimationFrame(update);
     } else {
       setViseme('X');
+      animationFrame = null;
     }
   }
   update();

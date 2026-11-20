@@ -70,26 +70,36 @@ examples/svelte/
   import { recordAudio } from 'lip-sync-engine';
 
   async function handleRecord() {
-    const { pcm16 } = await recordAudio(5000); // mono 16 kHz Int16
-    await lipSyncEngineStore.analyze(pcm16, { dialogText: 'Hello world', sampleRate: 16000 });
+    try {
+      const { pcm16 } = await recordAudio(5000); // mono 16 kHz Int16
+      await lipSyncEngineStore.analyze(pcm16, { dialogText: 'Hello world', sampleRate: 16000 });
+    } catch {
+      // Recording failed, or analyze() failed and set `error` or `initError`
+    }
   }
 </script>
 
 <button on:click={() => lipSyncEngineStore.setMode('streaming')}>Streaming</button>
-<button on:click={handleRecord} disabled={$lipSyncEngineStore.isAnalyzing}>
+<!-- analyze() waits for a mode that is still starting -->
+<button
+  on:click={handleRecord}
+  disabled={$lipSyncEngineStore.isAnalyzing || $lipSyncEngineStore.initError !== null}
+>
   {$lipSyncEngineStore.isAnalyzing ? 'Analyzing...' : 'Record'}
 </button>
 
 {#if $lipSyncEngineStore.initError}
-  <p>Failed to initialize: {$lipSyncEngineStore.initError.message}. Reload the page to retry.</p>
+  <p>Failed to initialize: {$lipSyncEngineStore.initError.message}</p>
 {:else if !$lipSyncEngineStore.isInitialized}
   <p>Initializing...</p>
 {/if}
 ```
 
-Selecting a mode starts what it needs: the engine for Single Thread, one worker for Web Worker, and all workers for Chunked and Streaming. `isInitialized` turns true when that startup finishes, and `initError` is set if it fails. `analyze()` also starts the mode if needed, so the Record button does not wait for `isInitialized`.
+Selecting a mode starts what it needs: the engine for Single Thread, one worker for Web Worker, and all workers for Chunked and Streaming. `isInitialized` turns true when that startup finishes, and `initError` is set if it fails. `analyze()` also starts the mode if needed, so recording can begin while the mode is still starting; only a failed startup disables it.
 
-`analyze()` resolves with the result, throws on failure, and sets `error` in the store. `lipSyncEngineStore.destroy()` frees the engine and the workers when the app no longer needs them.
+`analyze()` resolves with the result. It throws on failure: it sets `initError` (and throws a `StartupError`) when the selected mode fails to start, and sets `error` when the analysis itself fails. The library keeps a failed WASM load, so after a Single Thread failure reload the page to retry. A worker pool that failed to start tries again when a worker mode is selected again, so for the worker modes switch modes or reload the page.
+
+`lipSyncEngineStore.destroy()` frees the engine and the workers when the app no longer needs them. It sets `stopped` in the store, and the next `analyze()` or mode change starts the selected mode again.
 
 ### Mouth Shape Animation
 

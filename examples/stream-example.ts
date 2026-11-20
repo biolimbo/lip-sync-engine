@@ -10,7 +10,7 @@
  * chunks analyzed alone lose most of their mouth shapes; with 500 ms of
  * context and lookahead each chunk is analyzed with the audio around it.
  *
- * Entry points: `analyzeChunks()` for any async source (see `fileAsStream()`),
+ * Entry points: `analyzeStream()` for any async source (see `fileAsStream()`),
  * `analyzeWebSocket()` for a socket that sends raw PCM, and
  * `analyzeMicrophone()` for live microphone input.
  */
@@ -129,11 +129,11 @@ class Utterance {
  * const log: CuesHandler = (cues) => console.log(cues);
  *
  * // Two utterances in a row share the same warm pool.
- * await analyzeChunks(fileAsStream('/speech-1.wav'), log, 'Hello world');
- * await analyzeChunks(fileAsStream('/speech-2.wav'), log);
+ * await analyzeStream(fileAsStream('/speech-1.wav'), log, 'Hello world');
+ * await analyzeStream(fileAsStream('/speech-2.wav'), log);
  * ```
  */
-export async function analyzeChunks(
+export async function analyzeStream(
   chunks: AsyncIterable<Int16Array>,
   onCues: CuesHandler,
   dialogText?: string
@@ -219,6 +219,9 @@ async function openTap(media: MediaStream) {
   // microphone to a context with a different rate) and resample later.
   const context = new AudioContext();
   try {
+    // A context created outside a user gesture (for example after the
+    // permission prompt) can start suspended and would deliver no audio.
+    await context.resume();
     const moduleUrl = URL.createObjectURL(new Blob([TAP_PROCESSOR], { type: 'text/javascript' }));
     try {
       await context.audioWorklet.addModule(moduleUrl);

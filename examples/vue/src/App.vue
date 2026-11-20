@@ -7,7 +7,7 @@ import type { ExecutionMode } from './composables/useLipSyncEngine';
 
 interface LogEntry {
   message: string;
-  type: 'info' | 'error' | 'warn' | 'success';
+  type: 'info' | 'error' | 'success';
   timestamp: string;
 }
 
@@ -66,11 +66,15 @@ const visemeNames: Record<string, string> = {
   X: 'Idle',
 };
 
-const initErrorMessage = computed(() =>
-  initError.value
-    ? `Failed to initialize: ${initError.value.message.replace(/\.+$/, '')}. Reload the page to retry.`
-    : ''
-);
+// The library keeps a failed WASM load, so Single Thread needs a reload. A
+// worker pool that failed to start tries again when a worker mode is selected.
+const initErrorMessage = computed(() => {
+  if (!initError.value) return '';
+  const message = initError.value.message.replace(/\.+$/, '');
+  return mode.value === 'single'
+    ? `${message}. Reload the page to retry.`
+    : `${message}. Switch modes or reload the page to retry.`;
+});
 
 const statusText = computed(() => {
   if (isRecording.value) return 'Recording. Speak now.';
@@ -103,7 +107,7 @@ watch(isInitialized, (ready) => {
   if (ready) addLog(`${modeName(mode.value)} ready`, 'success');
 });
 watch(initErrorMessage, (message) => {
-  if (message) addLog(message, 'error');
+  if (message) addLog(`Failed to initialize ${modeName(mode.value)}: ${message}`, 'error');
 });
 
 const stopPlayback = () => {
@@ -186,6 +190,7 @@ const runAnalysis = async (pcm16: Int16Array) => {
 };
 
 const handleRecord = async () => {
+  stopPlayback();
   reset();
   audioBuffer.value = null;
 
@@ -213,6 +218,7 @@ const handleFileUpload = async (event: Event) => {
   target.value = ''; // allow loading the same file again
   if (!file) return;
 
+  stopPlayback();
   reset();
   audioBuffer.value = null;
 
@@ -286,7 +292,7 @@ watch(result, (newResult) => {
           @input="(e) => setRecordingDuration(Number((e.target as HTMLInputElement).value))"
           :disabled="isBusy"
         />
-        <small>Adjust recording duration (5-60 seconds)</small>
+        <small>5 to 60 seconds</small>
       </div>
 
       <!-- Chunk Settings: only in chunked or streaming mode -->
@@ -352,7 +358,7 @@ watch(result, (newResult) => {
         <div class="metrics-grid">
           <div class="metric">
             <div class="metric-label">Execution Time</div>
-            <div class="metric-value">{{ metrics.executionTime.toFixed(2) }} ms</div>
+            <div class="metric-value">{{ Math.round(metrics.executionTime) }} ms</div>
           </div>
           <div class="metric">
             <div class="metric-label">Mouth Cues</div>
@@ -381,7 +387,7 @@ watch(result, (newResult) => {
             />
           </div>
           <div class="viseme-label">
-            {{ visemeNames[currentViseme] }} ({{ currentViseme }})
+            {{ currentViseme }}: {{ visemeNames[currentViseme] }}
           </div>
         </div>
       </div>
@@ -391,10 +397,10 @@ watch(result, (newResult) => {
           <h3>Lip Sync Results</h3>
           <button
             class="play-btn"
-            @click="handlePlay"
-            :disabled="isPlaying"
+            @click="isPlaying ? stopPlayback() : handlePlay()"
+            :disabled="!audioBuffer"
           >
-            {{ isPlaying ? 'Playing...' : '▶ Play' }}
+            {{ isPlaying ? 'Stop' : 'Play' }}
           </button>
         </div>
         <div class="cues-list">
@@ -861,10 +867,6 @@ input[type="text"]:disabled {
 
 .log-entry.error {
   color: #ff6b6b;
-}
-
-.log-entry.warn {
-  color: #ffd43b;
 }
 
 .log-entry.success {

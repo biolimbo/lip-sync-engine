@@ -40,6 +40,23 @@ function toError(err: unknown): Error {
   return err instanceof Error ? err : new Error(String(err));
 }
 
+/** Resolve after the browser paints, so a status set just before shows up */
+function nextPaint(): Promise<void> {
+  // requestAnimationFrame runs just before the next paint, and the timeout runs after it
+  return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+}
+
+/**
+ * Thrown by analyze() when the selected mode fails to start. The failure is
+ * also reported as `initError`, so callers need not show it again.
+ */
+export class StartupError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StartupError';
+  }
+}
+
 function splitIntoChunks(pcm16: Int16Array, chunkSeconds: number, sampleRate: number): Int16Array[] {
   const chunkSamples = Math.round(chunkSeconds * sampleRate);
   const chunks: Int16Array[] = [];
@@ -79,9 +96,11 @@ export function useLipSyncEngine() {
   const initError = initFailure?.mode === mode ? initFailure.error : null;
 
   // Start what the selected mode needs. Nothing is torn down when the mode
-  // changes or the component unmounts.
+  // changes or the component unmounts. A worker pool that failed to start
+  // tries again here, so switching back to a failed worker mode retries it.
   useEffect(() => {
     let current = true;
+    setInitFailure(null);
     prepare(mode).then(
       () => { if (current) setReadyMode(mode); },
       (err) => {
@@ -100,17 +119,27 @@ export function useLipSyncEngine() {
 
       try {
         const sampleRate = options.sampleRate ?? 16000;
-        await prepare(mode);
+        try {
+          await prepare(mode);
+        } catch (err) {
+          const e = toError(err);
+          if (!(err instanceof WorkerPoolDestroyedError)) setInitFailure({ mode, error: e });
+          throw new StartupError(e.message);
+        }
         setReadyMode(mode);
         setInitFailure(null);
-        const startTime = performance.now();
 
         let analysisResult: LipSyncEngineResult;
         let workersUsed: number | undefined;
         let chunksProcessed: number | undefined;
 
+        let startTime = performance.now();
+
         if (mode === 'single') {
-          // Runs on the main thread and blocks the UI
+          // Runs on the main thread and blocks the UI, so paint the
+          // "Analyzing" status first
+          await nextPaint();
+          startTime = performance.now();
           analysisResult = await LipSyncEngine.getInstance().analyze(pcm16, options);
 
         } else if (mode === 'worker') {
@@ -162,7 +191,7 @@ export function useLipSyncEngine() {
         return { result: analysisResult, metrics: performanceMetrics };
       } catch (err) {
         const e = toError(err);
-        setError(e);
+        if (!(e instanceof StartupError)) setError(e);
         throw e;
       } finally {
         setIsAnalyzing(false);

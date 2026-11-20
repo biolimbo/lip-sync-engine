@@ -13,7 +13,7 @@ A Vue 3 application that records or loads audio, analyzes it with `lip-sync-engi
   - Streaming: feeds the chunks to `createStreamAnalyzer()` with 500 ms of context and lookahead, as a live source would
 - Performance metrics: execution time, cue count, workers used, and chunks processed
 - Adjustable recording duration and chunk size
-- Mouth shape animation synchronized with audio playback, with a replay button
+- Mouth shape animation synchronized with audio playback, with Play and Stop controls
 - Timeline of all mouth cues and a timestamped log of each step
 
 ## Setup
@@ -24,6 +24,8 @@ npm run dev
 ```
 
 Then open http://localhost:3001.
+
+To run the example against a local build of the library, see [Testing Against the Examples](../../docs/development.md#testing-against-the-examples).
 
 ## WASM Files and Worker Script
 
@@ -68,22 +70,30 @@ import { useLipSyncEngine } from './composables/useLipSyncEngine';
 const { analyze, result, isAnalyzing, isInitialized, initError, setMode } = useLipSyncEngine();
 
 const handleRecord = async () => {
-  const { pcm16 } = await recordAudio(5000); // mono 16 kHz Int16
-  await analyze(pcm16, { dialogText: 'Hello world', sampleRate: 16000 });
+  try {
+    const { pcm16 } = await recordAudio(5000); // mono 16 kHz Int16
+    await analyze(pcm16, { dialogText: 'Hello world', sampleRate: 16000 });
+  } catch {
+    // Recording failed, or analyze() failed and set `error` or `initError`
+  }
 };
 </script>
 
 <template>
   <button @click="setMode('streaming')">Streaming</button>
-  <button @click="handleRecord" :disabled="!isInitialized || isAnalyzing">
+  <!-- analyze() waits for a mode that is still starting -->
+  <button @click="handleRecord" :disabled="isAnalyzing || initError !== null">
     {{ isAnalyzing ? 'Analyzing...' : 'Record' }}
   </button>
-  <p v-if="initError">Failed to initialize: {{ initError.message }}. Reload the page to retry.</p>
+  <p v-if="initError">Failed to initialize: {{ initError.message }}</p>
+  <p v-else-if="!isInitialized">Initializing...</p>
   <p v-if="result">{{ result.mouthCues.length }} cues</p>
 </template>
 ```
 
-`analyze()` throws on failure. It sets `initError` when the selected mode fails to start and `error` when the analysis itself fails.
+Selecting a mode starts what it needs: the engine for Single Thread, one worker for Web Worker, and all workers for Chunked and Streaming. `isInitialized` turns true when that startup finishes. `analyze()` also starts the mode if needed, so recording can begin while the mode is still starting.
+
+`analyze()` throws on failure. It sets `initError` when the selected mode fails to start and `error` when the analysis itself fails. The library keeps a failed WASM load, so after a Single Thread failure reload the page to retry. A worker pool that failed to start tries again when a worker mode is selected again, so for the worker modes switch modes or reload the page.
 
 ### Mouth Shape Animation
 
