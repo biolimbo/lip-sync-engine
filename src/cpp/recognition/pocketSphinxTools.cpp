@@ -44,6 +44,10 @@ logging::Level convertSphinxErrorLevel(err_lvl_t errorLevel) {
 void sphinxLogCallback(void* user_data, err_lvl_t errorLevel, const char* format, ...) {
 	UNUSED(user_data);
 
+	// Most PocketSphinx output is INFO (mapped to Trace). Skip formatting
+	// messages nobody will see; decoder setup alone emits hundreds of them.
+	if (!logging::isEnabled(convertSphinxErrorLevel(errorLevel))) return;
+
 	// Create varArgs list
 	va_list args;
 	va_start(args, format);
@@ -60,7 +64,7 @@ void sphinxLogCallback(void* user_data, err_lvl_t errorLevel, const char* format
 		success = charsWritten < static_cast<int>(chars.size());
 		if (!success) chars.resize(chars.size() * 2);
 	}
-	const regex waste("^(DEBUG|INFO|INFOCONT|WARN|ERROR|FATAL): ");
+	static const regex waste("^(DEBUG|INFO|INFOCONT|WARN|ERROR|FATAL): ");
 	string message =
 		std::regex_replace(chars.data(), waste, "", std::regex_constants::format_first_only);
 	boost::algorithm::trim(message);

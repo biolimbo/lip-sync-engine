@@ -49,7 +49,21 @@ void logging::log(const Entry& entry) {
 	}
 }
 
+static Level& minLevel() {
+	static Level level = Level::Trace;
+	return level;
+}
+
+void logging::setMinLevel(Level level) {
+	minLevel() = level;
+}
+
+bool logging::isEnabled(Level level) {
+	return level >= minLevel();
+}
+
 void logging::log(Level level, const string& message) {
+	if (!isEnabled(level)) return;
 	const Entry entry = Entry(level, message);
 	log(entry);
 }

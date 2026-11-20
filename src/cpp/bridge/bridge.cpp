@@ -2,6 +2,7 @@
 #include "audio_utils.h"
 #include "lib/lipSyncEngineLib.h"
 #include "recognition/PocketSphinxRecognizer.h"
+#include "recognition/PhoneticRecognizer.h"
 #include "exporters/JsonExporter.h"
 #include "animation/targetShapeSet.h"
 #include "tools/progress.h"
@@ -40,7 +41,10 @@ static std::string g_last_error;
 static bool g_initialized = false;
 
 // Decoder reuse optimization (Phase 0)
-static std::unique_ptr<PocketSphinxRecognizer> g_recognizer;
+static std::unique_ptr<Recognizer> g_recognizer;
+static int g_recognizer_kind = 0; // 0 = PocketSphinx words, 1 = phonetic
+// Extended shapes to use on top of the basic A-F (any of "GHX"); empty = basic only
+static ShapeSet g_target_shapes = ShapeConverter::get().getBasicShapes();
 static std::string g_cached_dialog_text;
 
 // Internal error handling
@@ -65,17 +69,24 @@ extern "C" int lipsyncengine_init(const char* models_path) {
 		g_models_path = models_path;
 
 		// Phase 0: Create recognizer once for reuse
-		g_recognizer = std::make_unique<PocketSphinxRecognizer>();
+		if (g_recognizer_kind == 1) g_recognizer = std::make_unique<PhoneticRecognizer>();
+		else g_recognizer = std::make_unique<PocketSphinxRecognizer>();
 		g_cached_dialog_text = "";
 
-		g_initialized = true;
+		// Set up logging with custom filter to suppress munmap errors (once)
+		static bool sinkAdded = false;
+		if (!sinkAdded) {
+			auto formatter = std::make_shared<logging::SimpleConsoleFormatter>();
+			auto stderrSink = std::make_shared<logging::StdErrSink>(formatter);
+			auto munmapFilter = std::make_shared<MunmapFilterSink>(stderrSink);
+			auto levelFilter = std::make_shared<logging::LevelFilter>(munmapFilter, logging::Level::Info);
+			logging::addSink(levelFilter);
+			// Drop lower-level messages before they are formatted
+			logging::setMinLevel(logging::Level::Info);
+			sinkAdded = true;
+		}
 
-		// Set up logging with custom filter to suppress munmap errors
-		auto formatter = std::make_shared<logging::SimpleConsoleFormatter>();
-		auto stderrSink = std::make_shared<logging::StdErrSink>(formatter);
-		auto munmapFilter = std::make_shared<MunmapFilterSink>(stderrSink);
-		auto levelFilter = std::make_shared<logging::LevelFilter>(munmapFilter, logging::Level::Info);
-		logging::addSink(levelFilter);
+		g_initialized = true;
 
 		return 0;
 	} catch (const std::exception& e) {
@@ -85,6 +96,67 @@ extern "C" int lipsyncengine_init(const char* models_path) {
 		set_error("Unknown initialization error");
 		return -1;
 	}
+}
+
+// Build the default decoder ahead of the first analysis
+extern "C" int lipsyncengine_prewarm() {
+	try {
+		clear_error();
+		if (!g_initialized) {
+			set_error("Module not initialized. Call lipsyncengine_init() first");
+			return -1;
+		}
+		if (g_recognizer_kind == 1) prewarmPhoneticDecoder();
+		else prewarmPocketSphinxDecoder();
+		return 0;
+	} catch (const std::exception& e) {
+		set_error(std::string("Prewarm error: ") + e.what());
+		return -1;
+	} catch (...) {
+		set_error("Unknown prewarm error");
+		return -1;
+	}
+}
+
+// Select the recognizer: 0 = PocketSphinx word recognition (default),
+// 1 = phonetic (no word language model; ignores dialog text)
+extern "C" int lipsyncengine_set_recognizer(int kind) {
+	clear_error();
+	if (kind != 0 && kind != 1) {
+		set_error("Unknown recognizer");
+		return -1;
+	}
+	if (kind == g_recognizer_kind && g_recognizer) return 0;
+	g_recognizer_kind = kind;
+	if (kind == 1) {
+		g_recognizer = std::make_unique<PhoneticRecognizer>();
+		releasePocketSphinxDecoders();
+	} else {
+		g_recognizer = std::make_unique<PocketSphinxRecognizer>();
+		releasePhoneticDecoder();
+	}
+	return 0;
+}
+
+// Choose Rhubarb's extended mouth shapes on top of A-F: any combination of
+// "G" (F/V), "H" (L) and "X" (idle), like Rhubarb's --extendedShapes option.
+// NULL or "" = basic shapes only (default).
+extern "C" int lipsyncengine_set_extended_shapes(const char* shapes) {
+	clear_error();
+	ShapeSet result = ShapeConverter::get().getBasicShapes();
+	if (shapes) {
+		for (const char* c = shapes; *c; ++c) {
+			if (*c == 'G' || *c == 'g') result.insert(Shape::G);
+			else if (*c == 'H' || *c == 'h') result.insert(Shape::H);
+			else if (*c == 'X' || *c == 'x') result.insert(Shape::X);
+			else {
+				set_error(std::string("Unknown extended shape '") + *c + "'. Use any of G, H, X.");
+				return -1;
+			}
+		}
+	}
+	g_target_shapes = result;
+	return 0;
 }
 
 // Analyze PCM16 audio and generate JSON lip-sync-engine data
@@ -136,11 +208,11 @@ extern "C" const char* lipsyncengine_analyze_pcm16(
 			dialog = current_dialog;
 		}
 
-		// Phase 0: Reuse global recognizer instead of creating new one
-		// This saves ~700ms per analysis after the first call
+		// The recognizer keeps its PocketSphinx decoders cached between calls
+		// (see PocketSphinxRecognizer.cpp), so only the first call builds one.
 
-		// Get target shape set (using basic shapes only for now)
-		ShapeSet target_shapes = ShapeConverter::get().getBasicShapes();
+		// Target shapes: basic A-F plus any chosen extended shapes
+		const ShapeSet target_shapes = g_target_shapes;
 
 		// Create progress sink (no-op for WASM)
 		NullProgressSink progress_sink;
@@ -208,6 +280,8 @@ extern "C" const char* lipsyncengine_get_last_error() {
 
 // Phase 0: Cleanup function to free decoder resources
 extern "C" void lipsyncengine_cleanup() {
+	releasePocketSphinxDecoders();
+	releasePhoneticDecoder();
 	g_recognizer.reset();
 	g_cached_dialog_text.clear();
 	g_initialized = false;

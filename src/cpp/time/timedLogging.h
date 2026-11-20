@@ -7,6 +7,7 @@
 
 template<typename TValue>
 void logTimedEvent(const std::string& eventName, const Timed<TValue> timedValue) {
+	if (!logging::isEnabled(logging::Level::Debug)) return;
 	logging::debugFormat(
 		"##{0}[{1}-{2}]: {3}",
 		eventName,
