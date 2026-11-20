@@ -52,6 +52,10 @@ Measurements behind the figures below are in [BENCHMARK.md](./BENCHMARK.md).
 - Workers build their decoder during `init()` and `warmup()` (see the `prewarm` option), so the
   first analysis does not wait for it. A fresh pool still reaches its first cue sooner than in
   1.0.3; startup time grows with the worker count, most on devices with few cores.
+- Decoders built without `dialogText` load only the dictionary words the language model knows (79k
+  instead of 134k entries), which shortens decoder builds without changing output. The `.data` file
+  is about 2 MB larger.
+- PocketSphinx log messages below the active log level are no longer formatted.
 - `WorkerPool` compiles the `.wasm` file once and shares the compiled module with its other workers
   (see the `shareAssets` option), and fetches the worker script once per pool.
 - `WorkerPool.destroy()` rejects pending `init()`, `warmup()`, and analysis promises with
