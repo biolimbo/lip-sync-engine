@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LipSyncEngine - Vanilla JavaScript Example</title>
+  <title>lip-sync-engine: Vanilla JavaScript Example</title>
   <style>
     * {
       margin: 0;
@@ -38,6 +38,10 @@
     .subtitle {
       color: #888;
       font-size: 1em;
+    }
+
+    .subtitle a {
+      color: #4a9eff;
     }
 
     .mode-selector {
@@ -82,12 +86,14 @@
     }
 
     .mode-title {
+      display: block;
       font-weight: 600;
       font-size: 1.1em;
       margin-bottom: 4px;
     }
 
     .mode-desc {
+      display: block;
       font-size: 0.85em;
       opacity: 0.7;
     }
@@ -185,7 +191,7 @@
       min-width: 120px;
     }
 
-    button:hover:not(:disabled) {
+    .controls button:hover:not(:disabled) {
       background: #3a8eef;
       transform: translateY(-1px);
     }
@@ -360,30 +366,32 @@
 <body>
   <div class="container">
     <header>
-      <h1>🎤 LipSyncEngine</h1>
-      <p class="subtitle">Vanilla JavaScript - All Execution Modes</p>
+      <h1>lip-sync-engine</h1>
+      <p class="subtitle">
+        Vanilla JavaScript: main thread, worker and chunked modes.
+        For streaming, see <a href="../stream-example.ts">stream-example.ts</a>.
+      </p>
     </header>
 
     <div class="mode-selector">
       <h2>Execution Mode</h2>
       <div class="mode-buttons">
         <button class="mode-btn active" data-mode="single">
-          <div class="mode-title">🔄 Single Thread</div>
-          <div class="mode-desc">Blocks UI during analysis (~2-3s)</div>
+          <span class="mode-title">Single Thread</span>
+          <span class="mode-desc">Main thread (blocks the UI)</span>
         </button>
         <button class="mode-btn" data-mode="worker">
-          <div class="mode-title">⚡ Web Worker</div>
-          <div class="mode-desc">Non-blocking, UI responsive</div>
+          <span class="mode-title">Web Worker</span>
+          <span class="mode-desc">One worker (the UI stays responsive)</span>
         </button>
         <button class="mode-btn" data-mode="chunked">
-          <div class="mode-title">🚀 Chunked Workers</div>
-          <div class="mode-desc">Parallel processing (~5x faster)</div>
+          <span class="mode-title">Chunked Workers</span>
+          <span class="mode-desc">Splits the audio across up to 4 workers</span>
         </button>
       </div>
     </div>
 
     <div class="main-content">
-      <!-- Left Panel: Controls -->
       <div class="panel">
         <h2>Audio Input</h2>
 
@@ -395,13 +403,13 @@
         <div class="slider-group">
           <label for="recordingDuration">Recording Duration: <span id="recordingDurationValue">10</span>s</label>
           <input type="range" id="recordingDuration" value="10" min="5" max="60" step="5">
-          <small>Adjust recording duration (5-60 seconds)</small>
+          <small>5 to 60 seconds</small>
         </div>
 
         <div class="slider-group" id="chunkSettings" style="display:none;">
-          <label for="chunkSize">Chunk Size (seconds): <span id="chunkSizeValue">5</span>s</label>
+          <label for="chunkSize">Chunk Size: <span id="chunkSizeValue">5</span>s</label>
           <input type="range" id="chunkSize" value="5" min="1" max="10" step="1">
-          <small>Smaller chunks = more parallelization, larger chunks = better context</small>
+          <small>Smaller chunks run more in parallel; larger chunks give more accurate cues near chunk edges</small>
         </div>
 
         <div class="controls">
@@ -434,7 +442,6 @@
         </div>
       </div>
 
-      <!-- Right Panel: Visualization -->
       <div class="panel">
         <h2>Lip Sync Preview</h2>
 
@@ -450,7 +457,7 @@
             <img src="../assets/visemes/G.png" alt="G" data-viseme="G">
             <img src="../assets/visemes/H.png" alt="H" data-viseme="H">
           </div>
-          <div class="viseme-label" id="visemeLabel">Closed/Rest (X)</div>
+          <div class="viseme-label" id="visemeLabel">Idle (X)</div>
         </div>
 
         <div id="results" class="results" style="display:none;">
@@ -476,13 +483,14 @@
       dataPath: `${DIST}wasm/lip-sync-engine.data`,
       jsPath: `${DIST}wasm/lip-sync-engine.js`
     };
-    // Each worker holds its own copy of the models, so cap the pool size.
+    const SAMPLE_RATE = 16000;
+    // A warm worker uses about 115 MB, so cap the pool at 4 workers.
     const MAX_WORKERS = Math.min(navigator.hardwareConcurrency || 4, 4);
+    const READY_TEXT = 'Ready. Record or load audio to analyze it.';
 
     // Loaded in init() so a failed download shows up as an error on the page
     let LipSyncEngine, WorkerPool, recordAudio, loadAudio;
 
-    // DOM elements
     const modeButtons = document.querySelectorAll('.mode-btn');
     const chunkSettings = document.getElementById('chunkSettings');
     const recordBtn = document.getElementById('recordBtn');
@@ -507,12 +515,13 @@
     const workerMetricEl = document.getElementById('workerMetric');
 
     const visemeNames = {
-      X: 'Closed/Rest', A: 'Open', B: 'Lips Together', C: 'Rounded',
-      D: 'Tongue-Teeth', E: 'Slightly Open', F: 'F/V Sound',
-      G: 'Open Back', H: 'Wide Open'
+      A: 'Closed (M, B, P)', B: 'Clenched teeth', C: 'Open', D: 'Wide open',
+      E: 'Rounded', F: 'Puckered', G: 'F/V (upper teeth on lower lip)',
+      H: 'L (tongue raised)', X: 'Idle'
     };
 
     let currentMode = 'single';
+    let ready = false;
     let lipSyncEngine = null;
     let workerPool = null;
     let lastResult = null;
@@ -521,7 +530,24 @@
     let animationFrame = null;
     let audioContext = null; // one AudioContext for all playback
 
-    // Slider updates
+    // Each status change gets a number, so a slow background task (worker
+    // startup) does not overwrite a newer status such as "Analyzing...".
+    let statusVersion = 0;
+    function setStatus(text, kind = '') {
+      statusEl.textContent = text;
+      statusEl.className = kind ? `status ${kind}` : 'status';
+      return ++statusVersion;
+    }
+
+    function showError(message) {
+      errorEl.textContent = message;
+      errorEl.style.display = 'block';
+    }
+
+    function hideError() {
+      errorEl.style.display = 'none';
+    }
+
     recordingDurationInput.addEventListener('input', (e) => {
       recordingDurationValueEl.textContent = e.target.value;
       recordBtn.textContent = `🎙️ Record (${e.target.value}s)`;
@@ -531,161 +557,134 @@
       chunkSizeValueEl.textContent = e.target.value;
     });
 
-    // Mode selection
     modeButtons.forEach(btn => {
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', () => {
         modeButtons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         currentMode = btn.dataset.mode;
         chunkSettings.style.display = currentMode === 'chunked' ? 'block' : 'none';
-        workerMetricEl.style.display = currentMode === 'chunked' ? 'block' : 'none';
-
-        // Start the remaining workers for chunked mode
-        if (currentMode === 'chunked' && poolInitPromise) {
-          statusEl.textContent = 'Warming up worker pool...';
-          statusEl.className = 'status analyzing';
-          try {
-            await warmup();
-            console.log(`WorkerPool ready (${workerPool.getStats().totalWorkers} workers)`);
-          } catch (err) {
-            console.error('Warmup failed:', err);
-          }
-          statusEl.textContent = 'Ready! Select mode and analyze audio';
-          statusEl.className = 'status success';
-        }
+        workerMetricEl.style.display = currentMode === 'chunked' ? 'flex' : 'none';
+        if (currentMode === 'chunked' && ready) startAllWorkers();
       });
     });
 
-    // Start the other workers once (later calls reuse the same promise).
-    // Waits for init(): chunked mode can be selected while the pool starts.
-    let poolInitPromise = null;
-    let warmupPromise = null;
-    function warmup() {
-      if (!warmupPromise) {
-        warmupPromise = poolInitPromise.then(() => workerPool.warmup());
-        warmupPromise.catch(() => { warmupPromise = null; });
+    // init() starts one worker; chunked mode needs the rest, which warmup()
+    // starts. Concurrent warmup() calls share one startup, and once all
+    // workers run it returns at once.
+    async function startAllWorkers() {
+      const version = setStatus('Starting workers...', 'analyzing');
+      try {
+        await workerPool.warmup();
+        if (version === statusVersion) setStatus(READY_TEXT, 'success');
+      } catch (err) {
+        if (version === statusVersion) {
+          showError(`Worker startup failed: ${err.message}`);
+          setStatus('Worker startup failed', '');
+        }
       }
-      return warmupPromise;
     }
 
-    // Initialize
-    // This example starts both the main-thread engine and the worker pool up
-    // front for simplicity. Both stay alive for the whole page: since 2.0.0 a
-    // worker keeps its speech decoder between calls, so do not destroy and
-    // re-create the pool per analysis.
+    // Both engines start once and stay alive for the whole page. Create the
+    // pool once and reuse it for every analysis.
     async function init() {
       try {
-        statusEl.textContent = 'Initializing engines...';
+        setStatus('Initializing engines...', 'analyzing');
         ({ LipSyncEngine, WorkerPool, recordAudio, loadAudio } = await import(`${DIST}index.mjs`));
 
-        // Main thread engine (single mode)
         lipSyncEngine = LipSyncEngine.getInstance();
         await lipSyncEngine.init(WASM_PATHS);
 
-        // Worker pool (worker and chunked modes). init() starts one worker;
-        // warmup() starts the rest when chunked mode is selected.
         workerPool = WorkerPool.getInstance(MAX_WORKERS);
-        poolInitPromise = workerPool.init({ ...WASM_PATHS, workerScriptUrl: `${DIST}worker.js` });
-        await poolInitPromise;
+        await workerPool.init({ ...WASM_PATHS, workerScriptUrl: `${DIST}worker.js` });
 
-        statusEl.textContent = 'Ready! Select mode and analyze audio';
-        statusEl.className = 'status success';
+        ready = true;
         recordBtn.disabled = false;
         loadBtn.disabled = false;
+        if (currentMode === 'chunked') {
+          startAllWorkers();
+        } else {
+          setStatus(READY_TEXT, 'success');
+        }
       } catch (err) {
-        showError('Initialization failed: ' + err.message);
+        // The library keeps a failed WASM load, so only a reload retries it.
+        showError(`Initialization failed (reload the page to retry): ${err.message}`);
+        setStatus('Initialization failed', '');
       }
     }
 
-    // Split audio into chunks
-    function splitIntoChunks(pcm16, chunkDurationSec, sampleRate = 16000) {
-      const chunkSize = Math.round(chunkDurationSec * sampleRate);
+    function splitIntoChunks(pcm16, chunkDurationSec) {
+      const chunkSize = Math.round(chunkDurationSec * SAMPLE_RATE);
       const chunks = [];
-
       for (let i = 0; i < pcm16.length; i += chunkSize) {
         chunks.push(pcm16.subarray(i, i + chunkSize));
       }
-
       return chunks;
     }
 
-    // Analyze audio
     async function analyze(pcm16, audioBuffer) {
       try {
-        errorEl.style.display = 'none';
-        statusEl.className = 'status analyzing';
-        const dialogText = dialogTextInput.value.trim();
-        const startTime = performance.now();
-
+        hideError();
+        const options = {
+          dialogText: dialogTextInput.value.trim() || undefined,
+          sampleRate: SAMPLE_RATE
+        };
         let result;
+        let startTime;
 
         if (currentMode === 'single') {
-          statusEl.textContent = 'Analyzing (blocking UI)...';
-          result = await lipSyncEngine.analyze(pcm16, {
-            dialogText: dialogText || undefined,
-            sampleRate: 16000
-          });
+          setStatus('Analyzing on the main thread (the UI is blocked)...', 'analyzing');
+          // Let the browser paint the status before analysis blocks the main
+          // thread: requestAnimationFrame runs just before the next paint, and
+          // the timeout runs after it.
+          await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+          startTime = performance.now();
+          result = await lipSyncEngine.analyze(pcm16, options);
 
         } else if (currentMode === 'worker') {
-          statusEl.textContent = 'Analyzing in worker (non-blocking)...';
-          result = await workerPool.analyze(pcm16, {
-            dialogText: dialogText || undefined,
-            sampleRate: 16000
-          });
+          setStatus('Analyzing in a worker...', 'analyzing');
+          startTime = performance.now();
+          result = await workerPool.analyze(pcm16, options);
 
-        } else if (currentMode === 'chunked') {
-          // Each chunk is analysed on its own, so cues near chunk edges are
+        } else {
+          // Each chunk is analyzed on its own, so cues near chunk edges are
           // less accurate. For short streaming chunks use
           // pool.createStreamAnalyzer({ contextMs: 500, lookaheadMs: 500 }).
-          const chunkSize = parseInt(chunkSizeInput.value);
-          const chunks = splitIntoChunks(pcm16, chunkSize);
-          await warmup();
-          statusEl.textContent = `Processing ${chunks.length} chunks in parallel...`;
+          const chunks = splitIntoChunks(pcm16, Number(chunkSizeInput.value));
+          const { totalWorkers, maxWorkers } = workerPool.getStats();
+          if (totalWorkers < maxWorkers) setStatus('Starting workers...', 'analyzing');
+          await workerPool.warmup(); // not timed: the metric measures analysis only
+          setStatus(`Analyzing ${chunks.length} chunks in parallel...`, 'analyzing');
+          startTime = performance.now();
+          const results = await workerPool.analyzeChunks(chunks, options);
 
-          const results = await workerPool.analyzeChunks(chunks, {
-            dialogText: dialogText || undefined,
-            sampleRate: 16000
-          });
-
-          // Combine results (cue times are relative to each chunk)
-          const allCues = [];
-          let timeOffset = 0;
-
+          // Cue times are relative to each chunk: add the chunk's start time.
+          const mouthCues = [];
+          let offset = 0;
           results.forEach((chunkResult, i) => {
-            chunkResult.mouthCues.forEach(cue => {
-              allCues.push({
-                start: cue.start + timeOffset,
-                end: cue.end + timeOffset,
-                value: cue.value
-              });
-            });
-            timeOffset += chunks[i].length / 16000;
+            for (const cue of chunkResult.mouthCues) {
+              mouthCues.push({ start: cue.start + offset, end: cue.end + offset, value: cue.value });
+            }
+            offset += chunks[i].length / SAMPLE_RATE;
           });
 
-          result = { mouthCues: allCues };
+          result = { mouthCues };
           workersUsedEl.textContent = Math.min(chunks.length, workerPool.getStats().totalWorkers);
         }
 
-        const endTime = performance.now();
-        const execTime = ((endTime - startTime) / 1000).toFixed(2);
-
-        // Update metrics
+        const execTime = ((performance.now() - startTime) / 1000).toFixed(2);
         execTimeEl.textContent = `${execTime}s`;
         cuesCountEl.textContent = result.mouthCues.length;
-        audioDurationEl.textContent = `${(pcm16.length / 16000).toFixed(2)}s`;
+        audioDurationEl.textContent = `${(pcm16.length / SAMPLE_RATE).toFixed(2)}s`;
 
         displayResults(result, audioBuffer);
-        statusEl.textContent = `Analysis complete in ${execTime}s!`;
-        statusEl.className = 'status success';
+        setStatus(`Analysis complete in ${execTime}s`, 'success');
 
       } catch (err) {
-        showError('Analysis failed: ' + err.message);
-        statusEl.textContent = 'Analysis failed';
-        statusEl.className = 'status';
+        showError(`Analysis failed: ${err.message}`);
+        setStatus('Analysis failed', '');
       }
     }
 
-    // Display results
     function displayResults(result, audioBuffer) {
       lastResult = result;
       lastAudioBuffer = audioBuffer;
@@ -697,7 +696,7 @@
         const cueEl = document.createElement('div');
         cueEl.className = 'cue';
         cueEl.innerHTML = `
-          <span class="cue-time">${cue.start.toFixed(2)}s - ${cue.end.toFixed(2)}s</span>
+          <span class="cue-time">${cue.start.toFixed(2)}s to ${cue.end.toFixed(2)}s</span>
           <span class="cue-value">${cue.value}</span>
         `;
         cuesListEl.appendChild(cueEl);
@@ -706,7 +705,6 @@
       playAnimation(result.mouthCues, audioBuffer);
     }
 
-    // Set viseme
     function setViseme(viseme) {
       const images = visemeImagesEl.querySelectorAll('img');
       images.forEach(img => {
@@ -730,13 +728,12 @@
       playBtn.textContent = '▶ Play';
     }
 
-    // Play animation
     function playAnimation(mouthCues, audioBuffer) {
       if (!audioBuffer) return;
       stopPlayback();
 
       playBtn.disabled = true;
-      playBtn.textContent = '⏸ Playing';
+      playBtn.textContent = 'Playing...';
 
       if (!audioContext) audioContext = new AudioContext();
       audioContext.resume();
@@ -776,37 +773,33 @@
       };
     }
 
-    // Replay animation
     playBtn.addEventListener('click', () => {
       if (lastResult && lastAudioBuffer) {
         playAnimation(lastResult.mouthCues, lastAudioBuffer);
       }
     });
 
-    // Record audio
     recordBtn.addEventListener('click', async () => {
       try {
         recordBtn.disabled = true;
         loadBtn.disabled = true;
-        const recordingDuration = parseInt(recordingDurationInput.value);
-        statusEl.textContent = `Recording ${recordingDuration} seconds... Speak now!`;
-        statusEl.className = 'status analyzing';
+        hideError();
+        const recordingDuration = Number(recordingDurationInput.value);
+        setStatus(`Recording for ${recordingDuration} seconds. Speak now.`, 'analyzing');
         resultsEl.style.display = 'none';
 
         const { pcm16, audioBuffer } = await recordAudio(recordingDuration * 1000);
         await analyze(pcm16, audioBuffer);
 
       } catch (err) {
-        showError('Recording failed: ' + err.message);
-        statusEl.textContent = 'Recording failed';
-        statusEl.className = 'status';
+        showError(`Recording failed: ${err.message}`);
+        setStatus('Recording failed', '');
       } finally {
         recordBtn.disabled = false;
         loadBtn.disabled = false;
       }
     });
 
-    // Load audio file
     loadBtn.addEventListener('click', () => fileInput.click());
 
     fileInput.addEventListener('change', async (e) => {
@@ -816,17 +809,16 @@
       try {
         recordBtn.disabled = true;
         loadBtn.disabled = true;
-        statusEl.textContent = 'Loading audio file...';
-        statusEl.className = 'status analyzing';
+        hideError();
+        setStatus('Loading audio file...', 'analyzing');
         resultsEl.style.display = 'none';
 
         const { pcm16, audioBuffer } = await loadAudio(file);
         await analyze(pcm16, audioBuffer);
 
       } catch (err) {
-        showError('Failed to load audio: ' + err.message);
-        statusEl.textContent = 'Failed to load audio';
-        statusEl.className = 'status';
+        showError(`Failed to load audio: ${err.message}`);
+        setStatus('Failed to load audio', '');
       } finally {
         recordBtn.disabled = false;
         loadBtn.disabled = false;
@@ -834,12 +826,6 @@
       }
     });
 
-    function showError(message) {
-      errorEl.textContent = message;
-      errorEl.style.display = 'block';
-    }
-
-    // Initialize
     init();
   </script>
 </body>
