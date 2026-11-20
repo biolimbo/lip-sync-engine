@@ -12,7 +12,7 @@ export interface PerformanceMetrics {
 }
 
 // The engine and the worker pool are created once and shared by the whole app.
-// Since 1.1.0 each worker keeps its speech decoder between calls, so keep the
+// Since 2.0.0 each worker keeps its speech decoder between calls, so keep the
 // pool alive between analyses: destroying and re-creating it would pay the
 // start-up cost again every time. Call WorkerPool.getInstance().destroy() only
 // when the app no longer needs lip sync.
@@ -187,7 +187,7 @@ export function useLipSyncEngine() {
           };
 
         } else {
-          // Streaming: recommended 1.1.0 setup. Each chunk is analysed with
+          // Streaming: recommended 2.0.0 setup. Each chunk is analysed with
           // 500 ms of audio before and after it and only its own cues are
           // returned (times relative to the chunk). Short chunks analysed
           // alone lose most of their mouth shapes.

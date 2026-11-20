@@ -40,7 +40,7 @@ const results = await stream.finalize();
 Creates a new streaming analyzer controller.
 
 **Parameters:**
-- `options` - `StreamAnalyzerOptions` - `LipSyncEngineOptions` applied to all chunks, plus the 1.1.0 windowing options (`contextMs`, `lookaheadMs`, ...). See the API reference.
+- `options` - `StreamAnalyzerOptions` - `LipSyncEngineOptions` applied to all chunks, plus the 2.0.0 windowing options (`contextMs`, `lookaheadMs`, ...). See the API reference.
 
 **Returns:** `StreamAnalyzerController`
 
@@ -61,11 +61,11 @@ console.log(`Queued chunk ${index}`);
 
 ### `StreamAnalyzerController.getResult(index)`
 
-Promise for one chunk's result (1.1.0). Times are relative to the chunk start.
+Promise for one chunk's result (2.0.0). Times are relative to the chunk start.
 
 ### `StreamAnalyzerController.end()`
 
-No more chunks will be added (1.1.0). Chunks still waiting for lookahead are analysed straight away.
+No more chunks will be added (2.0.0). Chunks still waiting for lookahead are analysed straight away.
 
 ### `StreamAnalyzerController.finalize()`
 
@@ -178,7 +178,7 @@ Numbers below come from `BENCHMARK.md` (real speech, headless Chromium).
 
 ### 1. Create the pool once and keep it
 
-Since 1.1.0 each worker builds its speech decoder once (about 0.5 s of CPU) and reuses it. Destroying and re-creating the pool for every utterance pays that cost again before the first chunk.
+Since 2.0.0 each worker builds its speech decoder once (about 0.5 s of CPU) and reuses it. Destroying and re-creating the pool for every utterance pays that cost again before the first chunk.
 
 ```typescript
 const pool = WorkerPool.getInstance(2);

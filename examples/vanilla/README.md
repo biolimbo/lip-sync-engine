@@ -2,7 +2,7 @@
 
 Complete vanilla JavaScript example demonstrating LipSyncEngine.js with real-time viseme playback and a dark mode UI.
 
-The page loads the published package from the unpkg.com CDN (pinned to `1.1.0`), so it needs no build step.
+The page loads the published package from the unpkg.com CDN (pinned to `2.0.0`), so it needs no build step.
 
 ## Running
 
@@ -51,7 +51,7 @@ Pin the version in every URL. With no paths, `init()` loads the WASM files and t
 
 ```html
 <script type="module">
-  import { LipSyncEngine, WorkerPool, loadAudio } from 'https://unpkg.com/lip-sync-engine@1.1.0/dist/index.mjs';
+  import { LipSyncEngine, WorkerPool, loadAudio } from 'https://unpkg.com/lip-sync-engine@2.0.0/dist/index.mjs';
 
   // Main thread
   const lipSyncEngine = LipSyncEngine.getInstance();
@@ -103,7 +103,7 @@ await pool.init();      // starts one worker
 await pool.warmup();    // optional: start the other workers now
 ```
 
-Since 1.1.0 each worker keeps its speech decoder between calls. Create the pool once and reuse it for every analysis; destroying and re-creating it per analysis pays the start-up cost each time. Call `pool.destroy()` only when the page no longer needs lip sync.
+Since 2.0.0 each worker keeps its speech decoder between calls. Create the pool once and reuse it for every analysis; destroying and re-creating it per analysis pays the start-up cost each time. Call `pool.destroy()` only when the page no longer needs lip sync.
 
 ### 2. Get audio data
 
@@ -167,4 +167,4 @@ The example uses 9 viseme PNG images (X, A, B, C, D, E, F, G, H) stored in `../a
 2. **Audio Quality**: Clear audio with little background noise works best
 3. **Browser Permissions**: Grant microphone access when prompted
 4. **File Formats**: Supports MP3, WAV, OGG, and other browser-supported formats
-5. **CDN Versions**: Pin a specific version (for example `@1.1.0`) instead of `@latest`
+5. **CDN Versions**: Pin a specific version (for example `@2.0.0`) instead of `@latest`

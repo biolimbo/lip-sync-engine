@@ -6,7 +6,7 @@ export interface MouthCue {
   start: number;
   /** End time in seconds */
   end: number;
-  /** Mouth shape: A to F (A = closed lips for M, B, P), plus G, H, X when `extendedShapes` is set */
+  /** Mouth shape: A-F, G (F, V), H (L) or X (idle). Only A-F with `extendedShapes: ''` */
   value: string;
 }
 
@@ -39,8 +39,8 @@ export interface LipSyncEngineOptions {
 
   /**
    * Rhubarb's extended mouth shapes to use in addition to A-F: any
-   * combination of 'G' (F, V), 'H' (L) and 'X' (idle), e.g. 'GHX' for all
-   * nine shapes. Default '' (basic shapes A-F only, as in 1.0.x). Since 1.1.0.
+   * combination of 'G' (F, V), 'H' (L) and 'X' (idle). Default 'GHX' (all
+   * nine shapes) since 2.0.0. Use '' for basic shapes A-F only, as in 1.x.
    */
   extendedShapes?: string;
 
@@ -73,11 +73,11 @@ export interface LipSyncEngineModule {
   _malloc(size: number): number;
   _free(ptr: number): void;
   _lipsyncengine_init(modelsPathPtr: number): number;
-  /** Builds the speech decoder ahead of the first analysis (1.1.0+) */
+  /** Builds the speech decoder ahead of the first analysis (2.0.0+) */
   _lipsyncengine_prewarm?(): number;
-  /** 0 = PocketSphinx words (default), 1 = phonetic (1.1.0+) */
+  /** 0 = PocketSphinx words (default), 1 = phonetic (2.0.0+) */
   _lipsyncengine_set_recognizer?(kind: number): number;
-  /** Extended shapes on top of A-F, any of "GHX" (1.1.0+) */
+  /** Extended shapes on top of A-F, any of "GHX" (2.0.0+) */
   _lipsyncengine_set_extended_shapes?(shapesPtr: number): number;
   _lipsyncengine_analyze_pcm16(
     pcm16Ptr: number,

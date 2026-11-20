@@ -11,7 +11,7 @@ Complete working Svelte application demonstrating LipSyncEngine.js integration w
   - Single Thread - Runs on the main thread (blocks the UI)
   - Web Worker - Non-blocking, one worker
   - Chunked Workers - Splits the audio and analyses the chunks in parallel with `analyzeChunks()`. Each chunk is analysed on its own, so cues near chunk edges are less accurate.
-  - Streaming - Feeds the chunks to `createStreamAnalyzer()` with the recommended 1.1.0 settings (500 ms of context and lookahead), as a live source would
+  - Streaming - Feeds the chunks to `createStreamAnalyzer()` with the recommended 2.0.0 settings (500 ms of context and lookahead), as a live source would
 - 📊 **Performance Metrics** - View execution time, cue count, and worker usage
 - 🎛️ **Adjustable Settings** - Control recording duration and chunk size
 - 🎭 **Real-time Viseme Display** - Animated mouth shapes synchronized with audio playback
@@ -33,7 +33,7 @@ Then open http://localhost:3002
 
 ### Testing a local build
 
-Until `lip-sync-engine@1.1.0` is on npm (and unpkg), install the package built in this repository instead. This does not change `package.json`:
+Until `lip-sync-engine@2.0.0` is on npm (and unpkg), install the package built in this repository instead. This does not change `package.json`:
 
 ```bash
 # From the repository root
@@ -64,7 +64,7 @@ await WorkerPool.getInstance(4).init({ ...paths, workerScriptUrl: `${base}worker
 
 ## Keep the Pool Alive
 
-The example creates the engine and the worker pool once, at module level, and shares them across modes, analyses and component instances. Since 1.1.0 each worker keeps its speech decoder between calls, so only pool start-up pays for building it. Destroying and re-creating the pool for every analysis (or on every mode change) pays that cost again each time. Call `WorkerPool.getInstance().destroy()` only when the app no longer needs lip sync.
+The example creates the engine and the worker pool once, at module level, and shares them across modes, analyses and component instances. Since 2.0.0 each worker keeps its speech decoder between calls, so only pool start-up pays for building it. Destroying and re-creating the pool for every analysis (or on every mode change) pays that cost again each time. Call `WorkerPool.getInstance().destroy()` only when the app no longer needs lip sync.
 
 The pool is capped at 4 workers because each worker holds its own copy of the models (about 39 MB plus the WebAssembly heap).
 

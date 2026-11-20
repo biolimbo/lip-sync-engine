@@ -19,12 +19,12 @@ WebAssembly port of [Rhubarb Lip Sync](https://github.com/DanielSWolf/rhubarb-li
 - 🎨 **Complete API** - Audio utilities, format conversion, microphone recording
 - 📱 **Browser-Native** - No server required, runs entirely client-side
 
-## 🆕 What's New in 1.1.0
+## 🆕 What's New in 2.0.0
 
-- **Faster calls.** Each worker now keeps its PocketSphinx decoder between calls instead of rebuilding it every time (about 0.4 s per call in 1.0.x). Analysing a 250 ms chunk dropped from about 450 ms to under 100 ms, and the first chunk on a fresh pool from about 0.7 s to about 0.1 s. Output is frame-for-frame identical to 1.0.3 for the same input.
+- **Faster calls.** Each worker now keeps its PocketSphinx decoder between calls instead of rebuilding it every time (about 0.4 s per call in 1.0.x). Analysing a 250 ms chunk dropped from about 450 ms to under 100 ms, and the first chunk on a fresh pool from about 0.7 s to about 0.1 s. With `extendedShapes: ''` the output is frame-for-frame identical to 1.0.3 for the same input.
 - **No more out-of-memory workers.** 1.0.x workers ran out of memory after roughly 480 calls. That is fixed, so **keep the pool alive between utterances** instead of destroying and re-creating it.
 - **Better streaming quality.** `createStreamAnalyzer()` can analyse each chunk together with the audio around it (`contextMs`, `lookaheadMs`). In our streaming test this raised agreement with whole-utterance analysis from 37-68% to 82-90%, and cut false lip closures at chunk boundaries from 11-34% of frames to about 2% (see [Streaming Quality](#-streaming-quality)).
-- **Nine mouth shapes.** `extendedShapes: 'GHX'` adds Rhubarb's F/V, L and idle shapes to A-F (default stays A-F). With 500 ms context and lookahead, nine-shape streaming reaches 85-86% agreement with a nine-shape whole-answer reference.
+- **Nine mouth shapes by default (breaking change).** Results now use Rhubarb's full set: A-F plus G (F, V), H (L) and X (idle), as Rhubarb's own tool does. If your avatar only has art for A-F, pass `extendedShapes: ''` to get 1.x output back. With 500 ms context and lookahead, nine-shape streaming reaches 85-86% agreement with a nine-shape whole-answer reference.
 - **New pool options and methods:** `init({ prewarm, shareAssets, recognizer })`, `pool.getMemoryStats()`, and `getResult(index)` / `end()` on the stream controller.
 
 See [BENCHMARK.md](./BENCHMARK.md) for the full performance measurements.
@@ -54,7 +54,7 @@ const result = await analyze(pcm16, {
 // Use mouth cues for animation
 result.mouthCues.forEach(cue => {
   console.log(`${cue.start}s - ${cue.end}s: ${cue.value}`);
-  // Output: 0.00s - 0.35s: A
+  // Output: 0.00s - 0.35s: X
   //         0.35s - 0.50s: D
   //         0.50s - 0.85s: B
   //         ...
@@ -172,9 +172,9 @@ await lipSyncEngine.init();
 
 // Or pin to a specific version for production:
 await lipSyncEngine.init({
-  wasmPath: 'https://unpkg.com/lip-sync-engine@1.1.0/dist/wasm/lip-sync-engine.wasm',
-  dataPath: 'https://unpkg.com/lip-sync-engine@1.1.0/dist/wasm/lip-sync-engine.data',
-  jsPath: 'https://unpkg.com/lip-sync-engine@1.1.0/dist/wasm/lip-sync-engine.js'
+  wasmPath: 'https://unpkg.com/lip-sync-engine@2.0.0/dist/wasm/lip-sync-engine.wasm',
+  dataPath: 'https://unpkg.com/lip-sync-engine@2.0.0/dist/wasm/lip-sync-engine.data',
+  jsPath: 'https://unpkg.com/lip-sync-engine@2.0.0/dist/wasm/lip-sync-engine.js'
 });
 ```
 
@@ -200,7 +200,7 @@ LipSyncEngine.js outputs Rhubarb Lip Sync's six basic mouth shapes (definitions 
 | E | <img src="examples/assets/visemes/E.png" width="100"> | Rounded | o as in **o**ff |
 | F | <img src="examples/assets/visemes/F.png" width="100"> | Puckered lips | y**ou**, b**oy**, **w**ay |
 
-By default silence is shown as A (closed). Pass `extendedShapes: 'GHX'` (since 1.1.0) to also get Rhubarb's extended shapes, nine in total:
+Since 2.0.0 results also use Rhubarb's three extended shapes, nine in total (silence is shown as X):
 
 | Shape | Image | Description | Example Sounds |
 |-------|-------|-------------|----------------|
@@ -208,11 +208,11 @@ By default silence is shown as A (closed). Pass `extendedShapes: 'GHX'` (since 1
 | H | <img src="examples/assets/visemes/H.png" width="100"> | Tongue raised behind teeth | long l |
 | X | <img src="examples/assets/visemes/X.png" width="100"> | Idle, relaxed | silence |
 
-```typescript
-const result = await pool.analyze(pcm16, { sampleRate: 16000, extendedShapes: 'GHX' });
-```
+To get only A to F, as in 1.x (for avatars without G, H and X art), pass `extendedShapes: ''`. Any subset works, for example `'X'` for just the idle shape:
 
-Any subset works (for example `'X'` for just the idle shape). The default stays A to F so avatars drawn for 1.0.x keep working.
+```typescript
+const result = await pool.analyze(pcm16, { sampleRate: 16000, extendedShapes: '' }); // A-F only
+```
 
 ## 🔬 How It Works
 
@@ -230,22 +230,24 @@ Recognition needs surrounding audio. When short streaming chunks are analysed on
 - **Agreement**: share of frames with the same mouth shape as the reference.
 - **False closures**: frames within 150 ms of a chunk boundary where the result shows a closed mouth but the reference shows it open.
 
+These tables use the six basic shapes (`extendedShapes: ''`), so 1.0.3 and 2.0.0 are compared like for like. With the 2.0.0 default of nine shapes, scored against a nine-shape reference, results are similar: 31.9% (250 ms) and 65.1% (1000 ms) for chunks analysed alone, 85.1% and 86.4% with context and lookahead.
+
 **Agreement with the reference** (higher is better):
 
 | Setup | 100 ms chunks | 250 ms | 500 ms | 1000 ms |
 |---|---|---|---|---|
-| Each chunk analysed alone (1.0.3, and the 1.1.0 default) | 41.9% | 36.8% | 53.0% | 68.0% |
-| 1.1.0, `contextMs: 500, lookaheadMs: 500`, audio arriving faster than playback | **90.4%** | **88.4%** | **87.7%** | **87.9%** |
-| 1.1.0, same options, audio arriving at 3x playback speed | 83.4% | 81.8% | 83.1% | 85.3% |
+| Each chunk analysed alone (1.0.3, and 2.0.0 by default) | 41.9% | 36.8% | 53.0% | 68.0% |
+| 2.0.0, `contextMs: 500, lookaheadMs: 500`, audio arriving faster than playback | **90.4%** | **88.4%** | **87.7%** | **87.9%** |
+| 2.0.0, same options, audio arriving at 3x playback speed | 83.4% | 81.8% | 83.1% | 85.3% |
 
 **False closures at chunk boundaries** (lower is better):
 
 | Setup | 100 ms chunks | 250 ms | 500 ms | 1000 ms |
 |---|---|---|---|---|
-| Each chunk analysed alone (1.0.3, and the 1.1.0 default) | 10.8% | 33.7% | 25.6% | 24.9% |
-| 1.1.0, `contextMs: 500, lookaheadMs: 500`, audio arriving faster than playback | **1.3%** | **1.7%** | **1.4%** | **2.2%** |
+| Each chunk analysed alone (1.0.3, and 2.0.0 by default) | 10.8% | 33.7% | 25.6% | 24.9% |
+| 2.0.0, `contextMs: 500, lookaheadMs: 500`, audio arriving faster than playback | **1.3%** | **1.7%** | **1.4%** | **2.2%** |
 
-For comparison, analysing the whole answer in one call without a transcript reaches 94.2% agreement. At 100 ms chunks analysed alone, almost every chunk comes out as a single "B" shape. The 1.1.0 default (no context, no lookahead) gives exactly the same results as 1.0.3.
+For comparison, analysing the whole answer in one call without a transcript reaches 94.2% agreement. At 100 ms chunks analysed alone, almost every chunk comes out as a single "B" shape. With `extendedShapes: ''` and no context or lookahead, 2.0.0 gives exactly the same results as 1.0.3.
 
 **Phonetic recognizer.** `init({ recognizer: 'phonetic' })` recognises phones without words. It is much cheaper (about 0.12 vs 0.39 CPU seconds per second of audio, about 80 vs 140 MB per extra worker, first chunk in about 26 ms vs 136 ms on a fresh pool), but mouth shapes are clearly worse: about 62% agreement with context and lookahead at 250 ms and 1000 ms chunks, against 87-88% for the default recognizer. It also ignores `dialogText`. Use it only on weak devices or when speed matters more than accuracy.
 
@@ -256,14 +258,14 @@ This comparison is based on reading each project's code and documentation. **We 
 | | lip-sync-engine | [HeadAudio](https://github.com/met4citizen/HeadAudio) | [wlipsync](https://github.com/mrxz/wlipsync) |
 |---|---|---|---|
 | Method | Full speech recognition (PocketSphinx) plus Rhubarb's animation rules | MFCC features, nearest-prototype classifier over 39 phoneme prototypes | MFCC features matched against per-vowel profiles (port of uLipSync) |
-| Output | 6 Rhubarb mouth shapes (A-F), or 9 with `extendedShapes: 'GHX'` (adds F/V, L and idle) | 15 Oculus visemes | Vowels (A, I, U, E, O, silence) and volume |
+| Output | 9 Rhubarb mouth shapes (A-H, X), or 6 with `extendedShapes: ''` | 15 Oculus visemes | Vowels (A, I, U, E, O, silence) and volume |
 | Runs in | Web Workers (WASM) | AudioWorklet | AudioWorklet (WASM) |
 | Size | 1.9 MB WASM + ~40 MB models | 14 kB model | ~12 KB WASM |
 | Latency | Per chunk, plus lookahead for best quality | ~16 ms frames, ~50 ms claimed latency | ~11 ms hop |
 | Cost | ~115 MB and ~0.5 s decoder build per worker, ~0.3-0.4 CPU s per audio second | ~1% of a core, under 1 MB | Far lower than lip-sync-engine (not measured) |
 | Model / setup | Bundled English models, no setup | Bundled English model trained on ~40 min of Kokoro TTS voices | Needs a per-voice profile calibrated in Unity |
 
-- **lip-sync-engine** keeps closed-lip shapes (M, B, P) and their timing, because it recognises the actual phones. With `extendedShapes: 'GHX'` it also shows F/V (G), L (H) and idle (X). The cost is memory, CPU, start-up time, and the need for surrounding audio (context and lookahead) to reach its best quality.
+- **lip-sync-engine** keeps closed-lip shapes (M, B, P) and their timing, because it recognises the actual phones. It also shows F/V (G), L (H) and idle (X). The cost is memory, CPU, start-up time, and the need for surrounding audio (context and lookahead) to reach its best quality.
 - **HeadAudio** is far cheaper and nearly instant. Its own README calls its accuracy "far from optimal". Its majority vote and 120 ms minimum hold probably smooth away short lip closures (our reading of the code, not measured).
 - **wlipsync** is the lightest option but only tracks vowels and volume, so it cannot show closed lips or F/V.
 - **[TalkingHead](https://github.com/met4citizen/TalkingHead)** is a three.js 3D avatar library, not an audio analyser. Its own lip-sync is driven by text and word timestamps (rule-based word to viseme mapping), and it uses HeadAudio for audio-only lip-sync.
@@ -372,7 +374,7 @@ const resampled = resample(float32Array, 44100, 16000);
 interface MouthCue {
   start: number;  // seconds
   end: number;    // seconds
-  value: string;  // A to F, plus G, H, X when extendedShapes is set
+  value: string;  // A-H or X (A-F only with extendedShapes: '')
 }
 
 interface LipSyncEngineResult {
@@ -387,10 +389,10 @@ interface LipSyncEngineResult {
 interface LipSyncEngineOptions {
   dialogText?: string;      // Improves accuracy significantly
   sampleRate?: number;      // Default: 16000 (recommended)
-  extendedShapes?: string;  // New in 1.1.0: any of 'GHX' for nine shapes. Default '' (A-F)
+  extendedShapes?: string;  // New in 2.0.0. Default 'GHX' (nine shapes); '' = A-F only, as in 1.x
 }
 
-// New in 1.1.0
+// New in 2.0.0
 interface StreamAnalyzerOptions extends LipSyncEngineOptions {
   contextMs?: number;            // Default 0. Recommended: 500
   lookaheadMs?: number;          // Default 0. Recommended: 500

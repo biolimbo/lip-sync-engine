@@ -1,5 +1,8 @@
 import type { LipSyncEngineModule } from './types';
 
+/** All nine shapes; the engine's default since 2.0.0 */
+export const DEFAULT_EXTENDED_SHAPES = 'GHX';
+
 const current = new WeakMap<LipSyncEngineModule, string>();
 
 /**
@@ -7,11 +10,10 @@ const current = new WeakMap<LipSyncEngineModule, string>();
  * Only calls into WASM when the value changes.
  */
 export function applyExtendedShapes(module: LipSyncEngineModule, shapes: string | undefined): void {
-  const wanted = (shapes || '').toUpperCase();
-  if ((current.get(module) ?? '') === wanted) return;
+  const wanted = (shapes ?? DEFAULT_EXTENDED_SHAPES).toUpperCase();
+  if ((current.get(module) ?? DEFAULT_EXTENDED_SHAPES) === wanted) return;
   if (typeof module._lipsyncengine_set_extended_shapes !== 'function') {
-    if (wanted) throw new Error('This WASM build does not support extendedShapes');
-    return;
+    throw new Error('This WASM build does not support extendedShapes');
   }
   const len = module.lengthBytesUTF8(wanted) + 1;
   const ptr = module._malloc(len);

@@ -470,7 +470,7 @@
     const useLocalBuild = new URLSearchParams(location.search).has('local');
     const DIST = useLocalBuild
       ? new URL('../../dist/', location.href).href
-      : 'https://unpkg.com/lip-sync-engine@1.1.0/dist/';
+      : 'https://unpkg.com/lip-sync-engine@2.0.0/dist/';
     const WASM_PATHS = {
       wasmPath: `${DIST}wasm/lip-sync-engine.wasm`,
       dataPath: `${DIST}wasm/lip-sync-engine.data`,
@@ -568,7 +568,7 @@
 
     // Initialize
     // This example starts both the main-thread engine and the worker pool up
-    // front for simplicity. Both stay alive for the whole page: since 1.1.0 a
+    // front for simplicity. Both stay alive for the whole page: since 2.0.0 a
     // worker keeps its speech decoder between calls, so do not destroy and
     // re-create the pool per analysis.
     async function init() {

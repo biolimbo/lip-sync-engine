@@ -1,5 +1,5 @@
 /**
- * Example: streaming analysis with WorkerPool (lip-sync-engine 1.1.0+)
+ * Example: streaming analysis with WorkerPool (lip-sync-engine 2.0.0+)
  *
  * Audio arrives in chunks (from a WebSocket, the microphone, a TTS stream...).
  * Each chunk is added to a stream analyzer as soon as it arrives, and its
@@ -19,7 +19,7 @@ const SAMPLE_RATE = 16000; // mono 16-bit PCM at 16 kHz is what the recognizer e
 // ---------------------------------------------------------------------------
 // One pool for the whole app
 // ---------------------------------------------------------------------------
-// Since 1.1.0 each worker keeps its speech decoder between calls. Create the
+// Since 2.0.0 each worker keeps its speech decoder between calls. Create the
 // pool once and reuse it for every utterance; do not destroy and re-create it
 // per utterance (that pays the start-up cost again every time).
 

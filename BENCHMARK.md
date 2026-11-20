@@ -1,4 +1,4 @@
-# Benchmark: lip-sync-engine 1.0.3 vs 1.1.0
+# Benchmark: lip-sync-engine 1.0.3 vs 2.0.0
 
 Goal: less waiting before a voice avatar's first mouth cue, less CPU and memory on weak devices, and no worse mouth movement.
 
@@ -36,7 +36,7 @@ Each row adds one change on top of the previous one. 8 cores, 5 workers (Librari
 | 2. Skip formatting of dropped log messages | 1352 ms | 72 / 172 ms | 216 / 343 ms | 0.34 / 0.22 s | 136 ms | 702 / 635 MB |
 | 3. Pool: compile the WASM once and share it, send jobs to workers whose decoder is ready, fetch the worker script once | 1303 ms | 83 / 211 ms | 211 / 581 ms | 0.39 / 0.25 s | 144 ms | 780 / 800 MB |
 | 4. Load only the dictionary words the language model knows | 1236 ms | 73 / 185 ms | 194 / 321 ms | 0.35 / 0.21 s | 124 ms | 739 / 761 MB |
-| Final 1.1.0 (step 3 no longer copies the 39 MB model file into each worker) | 1154 ms | 85 / 215 ms | 188 / 327 ms | 0.40 / 0.20 s | 131 ms | 562 / 583 MB |
+| Final 2.0.0 (step 3 no longer copies the 39 MB model file into each worker) | 1154 ms | 85 / 215 ms | 188 / 327 ms | 0.40 / 0.20 s | 131 ms | 562 / 583 MB |
 
 Notes on each change:
 
@@ -55,29 +55,29 @@ Final build against 1.0.3, 250 ms chunks. "Streaming" means all chunks of an ans
 | Workers | Version | Fresh pool to first cue | Per chunk p50 | CPU per audio s | Streaming: first audio / stalls | Memory after use |
 |---|---|---|---|---|---|---|
 | 1 | 1.0.3 | 783 ms | 414 ms | 1.76 s | 464 ms / 12.0 s | 384 MB |
-| 1 | 1.1.0 | 671 ms | 93 ms | 0.44 s | 110 ms / 0 | 120 MB |
+| 1 | 2.0.0 | 671 ms | 93 ms | 0.44 s | 110 ms / 0 | 120 MB |
 | 2 | 1.0.3 | 1160 ms | 442 ms | 1.83 s | 439 ms / 0 (worst answer 0.3 s) | 507 MB |
-| 2 | 1.1.0 | 933 ms | 71 ms | 0.34 s | 219 ms / 0 | 241 MB |
+| 2 | 2.0.0 | 933 ms | 71 ms | 0.34 s | 219 ms / 0 | 241 MB |
 | 5 | 1.0.3 | 2638 ms | 414 ms | 1.76 s | 1324 ms / 0 | 861 MB |
-| 5 | 1.1.0 | 1960 ms | 93 ms | 0.43 s | 242 ms / 0 | 577 MB |
+| 5 | 2.0.0 | 1960 ms | 93 ms | 0.43 s | 242 ms / 0 | 577 MB |
 
 **8 cores:**
 
 | Workers | Version | Fresh pool to first cue | Per chunk p50 | CPU per audio s | Streaming: first audio / stalls | Memory after use |
 |---|---|---|---|---|---|---|
 | 1 | 1.0.3 | 710 ms | 495 ms | 2.09 s | 499 ms / 16.5 s | n/a (see note) |
-| 1 | 1.1.0 | 508 ms | 97 ms | 0.43 s | 170 ms / 0 | 127 MB |
+| 1 | 2.0.0 | 508 ms | 97 ms | 0.43 s | 170 ms / 0 | 127 MB |
 | 2 | 1.0.3 | 965 ms | 419 ms | 1.70 s | 489 ms / 0.26 s | 508 MB |
-| 2 | 1.1.0 | 915 ms | 73 ms | 0.34 s | 114 ms / 0 | 240 MB |
+| 2 | 2.0.0 | 915 ms | 73 ms | 0.34 s | 114 ms / 0 | 240 MB |
 | 5 | 1.0.3 | 1525 ms | 438 ms | 1.82 s | 721 ms / 0 | 868 MB |
-| 5 | 1.1.0 | 1154 ms | 85 ms | 0.40 s | 157 ms / 0 | 583 MB |
+| 5 | 2.0.0 | 1154 ms | 85 ms | 0.40 s | 157 ms / 0 | 583 MB |
 
 Note: the 1.0.3 1-worker memory reading on 8 cores was disturbed by work still queued from the previous test, so it is left out. The 1-worker "fresh pool" figures come from a separate clean rerun.
 
 What this means:
 
-- **One worker now keeps up with real-time speech.** 1.0.3 needs about 1.8 CPU seconds per second of audio at 250 ms chunks, so with one or two workers it falls behind and the player stalls for seconds. 1.1.0 needs about 0.4.
-- **Memory is about 115 MB per warm worker** (1.0.3: about 170 MB after use, and growing until it fails). On a 2-core device, 2 workers of 1.1.0 use 241 MB, against 861 MB for Librarium's current 5 workers of 1.0.3.
+- **One worker now keeps up with real-time speech.** 1.0.3 needs about 1.8 CPU seconds per second of audio at 250 ms chunks, so with one or two workers it falls behind and the player stalls for seconds. 2.0.0 needs about 0.4.
+- **Memory is about 115 MB per warm worker** (1.0.3: about 170 MB after use, and growing until it fails). On a 2-core device, 2 workers of 2.0.0 use 241 MB, against 861 MB for Librarium's current 5 workers of 1.0.3.
 - **More workers make a fresh pool slower,** especially on 2 cores (1.96 s with 5 workers, 0.67 s with 1). All workers build their decoders at the same time.
 
 ## Mouth-cue quality
@@ -87,13 +87,13 @@ Reference: each whole answer analysed in one call with its transcript. Results a
 - **Agreement:** share of frames with the same mouth shape as the reference.
 - **False closures:** frames within 150 ms of a chunk boundary where the result shows a closed mouth but the reference shows it open.
 
-**The default output did not change.** With default options, 1.1.0 output is byte-identical to 1.0.3 on all 8 answers at all 4 chunk sizes (32 of 32). So none of the speed and memory changes cost any quality.
+**The speed and memory changes cost no quality.** With `extendedShapes: ''` (the 1.x shape set), 2.0.0 output is byte-identical to 1.0.3 on all 8 answers at all 4 chunk sizes (32 of 32). The only change to default output in 2.0.0 is the switch to nine mouth shapes (below). The tables in this section use six shapes so the versions compare like for like.
 
 **Chunking is what hurts quality, and the new streaming options fix most of it.** In the table, "context and lookahead" means `createStreamAnalyzer({ contextMs: 500, lookaheadMs: 500 })`, measured end to end with the real controller:
 
 | Setup | 100 ms chunks | 250 ms | 500 ms | 1000 ms |
 |---|---|---|---|---|
-| Each chunk alone (1.0.3, and 1.1.0 default): agreement | 41.9% | 36.8% | 53.0% | 68.0% |
+| Each chunk alone (1.0.3, and 2.0.0 with six shapes): agreement | 41.9% | 36.8% | 53.0% | 68.0% |
 | Each chunk alone: false closures | 10.8% | 33.7% | 25.6% | 24.9% |
 | Context only (`contextMs: 500`): agreement | 39.3% | 54.0% | 66.0% | 75.4% |
 | Context and lookahead, audio arriving faster than playback: agreement | **90.4%** | **88.4%** | **87.7%** | **87.9%** |
@@ -122,7 +122,7 @@ Cost and stalls with context and lookahead (2 workers, median per answer, worst 
 
 Known limit: with 100 ms chunks, playback starts after only 100 ms of audio, and every later chunk must be analysed within that rhythm. That causes stalls of about 0.3 to 0.9 s per answer. For chunks that small, either accept the lower quality of chunk-by-chunk analysis (no stalls), or join deltas into chunks of at least 250 ms before analysing.
 
-**Nine mouth shapes** (`extendedShapes: 'GHX'`, new): adds G (f, v), H (l) and X (idle). Scored against a nine-shape reference:
+**Nine mouth shapes** (the 2.0.0 default, `extendedShapes: 'GHX'`): adds G (f, v), H (l) and X (idle). This is the breaking change behind the major version: `extendedShapes: ''` restores 1.x output. Scored against a nine-shape reference:
 
 | Setup | 250 ms | 1000 ms |
 |---|---|---|
@@ -142,8 +142,8 @@ It is much cheaper but clearly worse, so it is only for devices that cannot keep
 
 ## Recommendations for a streaming voice avatar (Librarium)
 
-1. **Create the pool once and keep it.** Stop destroying it after each answer. The first chunk of an answer then takes about 0.1 s instead of about 1.5 s. Destroying the pool was also hiding the 1.0.3 memory failure, which 1.1.0 no longer has.
+1. **Create the pool once and keep it.** Stop destroying it after each answer. The first chunk of an answer then takes about 0.1 s instead of about 1.5 s. Destroying the pool was also hiding the 1.0.3 memory failure, which 2.0.0 no longer has.
 2. **Use 2 workers instead of 5.** That saves about 340 MB with no stalls in these tests. Use 1 on very weak devices.
 3. **Switch to `createStreamAnalyzer({ sampleRate: 16000, contextMs: 500, lookaheadMs: 500 })`.** Use `getResult(i)` for each chunk, and call `end()` when the response's audio is done. This is the big quality gain at the same latency.
-4. **Pass `extendedShapes: 'GHX'`.** Librarium's avatar already supports all nine shapes.
+4. **Nothing to do for nine shapes.** They are the 2.0.0 default, and Librarium's avatar already supports all nine.
 5. **If the voice model's deltas are around 100 ms,** join them into chunks of at least 250 ms before analysing, or accept chunk-by-chunk quality.

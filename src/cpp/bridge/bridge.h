@@ -35,7 +35,8 @@ int lipsyncengine_set_recognizer(int kind);
 
 /**
  * Use Rhubarb's extended mouth shapes in addition to A-F: any combination of
- * "G" (F/V), "H" (L) and "X" (idle). NULL or "" = basic shapes only (default).
+ * "G" (F/V), "H" (L) and "X" (idle). Default "GHX" (all nine shapes).
+ * NULL or "" = basic shapes A-F only, as in 1.x.
  *
  * @return 0 on success, non-zero on error
  */

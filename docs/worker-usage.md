@@ -369,7 +369,7 @@ const pool = WorkerPool.getInstance(2);
 const pool = WorkerPool.getInstance(Math.min(navigator.hardwareConcurrency || 4, 4));
 ```
 
-Keep the pool alive between utterances. Since 1.1.0 each worker builds its speech decoder once and reuses it; destroying the pool throws that work away.
+Keep the pool alive between utterances. Since 2.0.0 each worker builds its speech decoder once and reuses it; destroying the pool throws that work away.
 
 ### 3. Clean Up Resources
 
@@ -487,7 +487,7 @@ await pool.init({
 1. Using `analyzeChunks()` for parallel processing?
 2. Sufficient worker count (check `getStats()`)?
 3. Chunks small enough to distribute?
-4. Pool kept alive between utterances (decoders are reused since 1.1.0)?
+4. Pool kept alive between utterances (decoders are reused since 2.0.0)?
 
 ---
 

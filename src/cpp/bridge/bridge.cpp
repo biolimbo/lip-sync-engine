@@ -43,8 +43,16 @@ static bool g_initialized = false;
 // Decoder reuse optimization (Phase 0)
 static std::unique_ptr<Recognizer> g_recognizer;
 static int g_recognizer_kind = 0; // 0 = PocketSphinx words, 1 = phonetic
-// Extended shapes to use on top of the basic A-F (any of "GHX"); empty = basic only
-static ShapeSet g_target_shapes = ShapeConverter::get().getBasicShapes();
+// Target mouth shapes: basic A-F plus extended G, H, X (all nine, Rhubarb's
+// default since 2.0.0). lipsyncengine_set_extended_shapes("") = A-F only.
+static ShapeSet allShapes() {
+	ShapeSet result = ShapeConverter::get().getBasicShapes();
+	result.insert(Shape::G);
+	result.insert(Shape::H);
+	result.insert(Shape::X);
+	return result;
+}
+static ShapeSet g_target_shapes = allShapes();
 static std::string g_cached_dialog_text;
 
 // Internal error handling
@@ -140,7 +148,7 @@ extern "C" int lipsyncengine_set_recognizer(int kind) {
 
 // Choose Rhubarb's extended mouth shapes on top of A-F: any combination of
 // "G" (F/V), "H" (L) and "X" (idle), like Rhubarb's --extendedShapes option.
-// NULL or "" = basic shapes only (default).
+// Default (never called) = "GHX". "" or NULL = basic shapes A-F only (1.x output).
 extern "C" int lipsyncengine_set_extended_shapes(const char* shapes) {
 	clear_error();
 	ShapeSet result = ShapeConverter::get().getBasicShapes();
