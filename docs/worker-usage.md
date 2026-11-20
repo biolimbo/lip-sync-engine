@@ -41,7 +41,7 @@ console.log(result.mouthCues);
 Without workers, audio analysis runs on the main thread, freezing the UI:
 
 ```typescript
-// L Blocks UI for 2-3 seconds
+// Blocks the UI while the analysis runs
 const result = await analyze(pcm16);
 // UI is frozen during analysis
 ```
@@ -65,7 +65,6 @@ const result = await pool.analyze(pcm16);
 | **UI Responsiveness** | Freezes | Responsive |
 | **Parallel Processing** | Sequential | Parallel |
 | **Decoder Reuse** | Yes | Yes |
-| **Performance (5 chunks)** | ~10-15s | ~2-3s |
 
 ---
 
@@ -142,7 +141,8 @@ function splitAudioIntoChunks(
 const chunks = splitAudioIntoChunks(fullAudio, 5, 16000);
 console.log(`Processing ${chunks.length} chunks in parallel...`);
 
-// Analyze all chunks simultaneously
+// Start all workers (init() starts only one), then analyze the chunks in parallel
+await pool.warmup();
 const results = await pool.analyzeChunks(chunks, {
   dialogText: "Full dialog text for all chunks"
 });
@@ -173,40 +173,7 @@ results.forEach((result, index) => {
 
 ## Performance Comparison
 
-### Single Audio File (5 seconds)
-
-```typescript
-// Main Thread: ~2-3s (UI frozen)
-const mainThreadResult = await analyze(pcm16);
-
-// Worker: ~2-3s (UI responsive)
-const workerResult = await pool.analyze(pcm16);
-```
-
-**Winner:** Workers (UI stays responsive)
-
-### Multiple Audio Files (5 files)
-
-```typescript
-// Main Thread: ~10-15s sequential
-for (const audio of audioFiles) {
-  await analyze(audio);
-}
-
-// Workers: ~2-3s parallel
-const chunks = audioFiles;
-await pool.analyzeChunks(chunks);
-```
-
-**Winner:** Workers (5x faster with parallelism)
-
-### Performance Table
-
-| Scenario | Main Thread | Workers | Speedup |
-|----------|-------------|---------|---------|
-| 1 file (5s) | 2-3s (blocked) | 2-3s (non-blocked) | UI responsive |
-| 5 files (5s each) | 10-15s | 2-3s | **~5x faster** |
-| 10 files (5s each) | 20-30s | 3-5s | **~6-8x faster** |
+Once a worker's decoder is built, analysis costs about 0.2 to 0.4 s of CPU per second of audio (see `BENCHMARK.md`). The cost is the same on the main thread and in a worker; the difference is that workers keep the UI responsive. Batches run in parallel across the workers started by `warmup()`, limited by CPU cores.
 
 ---
 
@@ -216,11 +183,12 @@ await pool.analyzeChunks(chunks);
 
 ```typescript
 import { WorkerPool, WorkerPoolDestroyedError } from 'lip-sync-engine';
+import type { LipSyncEngineResult } from 'lip-sync-engine';
 import { useState, useEffect, useRef } from 'react';
 
 function App() {
   const poolRef = useRef<WorkerPool | null>(null);
-  const [result, setResult] = useState(null);
+  const [result, setResult] = useState<LipSyncEngineResult | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -265,15 +233,19 @@ function App() {
 
 ```vue
 <script setup lang="ts">
-import { WorkerPool } from 'lip-sync-engine';
+import { WorkerPool, WorkerPoolDestroyedError } from 'lip-sync-engine';
+import type { LipSyncEngineResult } from 'lip-sync-engine';
 import { ref, onMounted, onUnmounted } from 'vue';
 
 const pool = WorkerPool.getInstance();
-const result = ref(null);
+const result = ref<LipSyncEngineResult | null>(null);
 const loading = ref(false);
 
-onMounted(async () => {
-  await pool.init();
+onMounted(() => {
+  // Unmounting during startup rejects init() with WorkerPoolDestroyedError
+  pool.init().catch(error => {
+    if (!(error instanceof WorkerPoolDestroyedError)) console.error(error);
+  });
 });
 
 onUnmounted(() => {
@@ -306,15 +278,19 @@ async function handleAnalyze(pcm16: Int16Array) {
 
 ```svelte
 <script lang="ts">
-  import { WorkerPool } from 'lip-sync-engine';
+  import { WorkerPool, WorkerPoolDestroyedError } from 'lip-sync-engine';
+  import type { LipSyncEngineResult } from 'lip-sync-engine';
   import { onMount, onDestroy } from 'svelte';
 
   const pool = WorkerPool.getInstance();
-  let result = null;
+  let result: LipSyncEngineResult | null = null;
   let loading = false;
 
-  onMount(async () => {
-    await pool.init();
+  onMount(() => {
+    // Unmounting during startup rejects init() with WorkerPoolDestroyedError
+    pool.init().catch(error => {
+      if (!(error instanceof WorkerPoolDestroyedError)) console.error(error);
+    });
   });
 
   onDestroy(() => {
@@ -384,10 +360,12 @@ Keep the pool alive between utterances. Since 2.0.0 each worker builds its speec
 // Good: Destroy when done
 useEffect(() => {
   const pool = WorkerPool.getInstance();
-  pool.init();
+  pool.init().catch(error => {
+    if (!(error instanceof WorkerPoolDestroyedError)) console.error(error);
+  });
 
   return () => {
-    pool.destroy(); // Cleanup
+    pool.destroy(); // Cleanup (only when the app is done with lip-sync for good)
   };
 }, []);
 
@@ -419,7 +397,7 @@ const result = await pool.analyze(pcm16); // May throw
 const stats = pool.getStats();
 
 if (stats.queuedJobs > 10) {
-  console.warn('Pool is overloaded, consider increasing maxWorkers');
+  console.warn('Pool is overloaded: call warmup() if only one worker has started, or create the pool with a larger maxWorkers (set at the first getInstance() call)');
 }
 
 console.log(`Workers: ${stats.busyWorkers}/${stats.totalWorkers} busy`);
@@ -452,6 +430,8 @@ python -m http.server 8000
 // Configure paths to same origin
 await pool.init({
   wasmPath: '/dist/wasm/lip-sync-engine.wasm', // Same origin
+  dataPath: '/dist/wasm/lip-sync-engine.data',
+  jsPath: '/dist/wasm/lip-sync-engine.js',
   workerScriptUrl: '/dist/worker.js' // Same origin
 });
 ```
@@ -495,6 +475,7 @@ await pool.init({
 2. Sufficient worker count (check `getStats()`)?
 3. Chunks small enough to distribute?
 4. Pool kept alive between utterances (decoders are reused since 2.0.0)?
+5. Called `warmup()` (`init()` starts only one worker)?
 
 ---
 
@@ -512,8 +493,8 @@ function getOptimalWorkerCount(): number {
     return Math.min(cores, 2);
   }
 
-  // High-end device: use all cores
-  return cores;
+  // Streaming speech needs only one or two workers; batch jobs can use a few more
+  return Math.min(cores, 4);
 }
 
 const pool = WorkerPool.getInstance(getOptimalWorkerCount());

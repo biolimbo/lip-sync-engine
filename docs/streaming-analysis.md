@@ -15,19 +15,21 @@ The `StreamAnalyzerController` allows you to:
 ```typescript
 import { WorkerPool } from 'lip-sync-engine';
 
-const pool = WorkerPool.getInstance(4); // 4 workers
+const pool = WorkerPool.getInstance(2); // one or two workers keep up with real-time speech
 await pool.init({ /* paths */ });
 await pool.warmup(); // Pre-create all workers
 
 const stream = pool.createStreamAnalyzer({
-  dialogText: "Expected dialog text",
-  sampleRate: 16000
+  sampleRate: 16000,
+  contextMs: 500,   // earlier audio analysed with each chunk
+  lookaheadMs: 500  // later audio, waited for only while playback allows
 });
 
 // Add chunks as they arrive
 for await (const chunk of audioStream) {
   stream.addChunk(chunk); // Non-blocking, returns immediately
 }
+stream.end(); // no more audio
 
 // Get all results in order
 const results = await stream.finalize();
@@ -121,6 +123,7 @@ Perfect for event-based APIs:
 ```typescript
 const stream = pool.createStreamAnalyzer({ sampleRate: 16000 });
 
+ws.binaryType = 'arraybuffer'; // messages arrive as Blob otherwise
 ws.addEventListener('message', (event) => {
   const chunk = new Int16Array(event.data);
   stream.addChunk(chunk);
@@ -189,7 +192,7 @@ await pool.warmup();
 
 ### 2. Use few workers
 
-A warm worker analyses a 250 ms chunk in well under 100 ms, so one or two workers keep up with real-time speech. Each worker costs about 115 MB, so more workers mostly cost memory, which matters most on tablets and kiosks.
+A warm worker analyses a 250 ms chunk in about 70 to 100 ms (median), so one or two workers keep up with real-time speech. Each worker costs about 115 MB, so more workers mostly cost memory, which matters most on tablets and kiosks.
 
 ### 3. Give chunks context and lookahead
 
@@ -262,8 +265,8 @@ const completed: LipSyncEngineResult[] = [];
 for await (const chunk of audioStream) {
   const index = stream.addChunk(chunk);
 
-  // Get result as soon as THIS chunk completes (optional)
-  pool.analyze(chunk, { sampleRate: 16000 }).then(result => {
+  // Get result as soon as THIS chunk completes (times relative to the chunk start)
+  stream.getResult(index).then(result => {
     console.log(`Chunk ${index} completed:`, result.mouthCues);
     completed.push(result);
   });
@@ -289,7 +292,7 @@ try {
 }
 ```
 
-**Note:** If any chunk fails, `finalize()` will reject with that error. Individual chunk errors don't affect other chunks in the queue.
+**Note:** If any chunk fails, `finalize()` will reject with that error. Without `contextMs`/`lookaheadMs`, a failed chunk does not affect the others. With them, chunks analysed in the same batch fail together.
 
 ## Complete Example
 
@@ -297,8 +300,8 @@ try {
 import { WorkerPool } from 'lip-sync-engine';
 
 async function processLiveAudio() {
-  // 1. Initialize pool
-  const pool = WorkerPool.getInstance(4);
+  // 1. Initialize pool (create it once and reuse it for every stream)
+  const pool = WorkerPool.getInstance(2);
   await pool.init({
     wasmPath: '/dist/wasm/lip-sync-engine.wasm',
     dataPath: '/dist/wasm/lip-sync-engine.data',
@@ -311,12 +314,14 @@ async function processLiveAudio() {
 
   // 3. Create streaming analyzer
   const stream = pool.createStreamAnalyzer({
-    dialogText: "Expected dialog",
-    sampleRate: 16000
+    sampleRate: 16000,
+    contextMs: 500,
+    lookaheadMs: 500
   });
 
   // 4. Process chunks as they arrive
   const ws = new WebSocket('wss://audio-stream.example.com');
+  ws.binaryType = 'arraybuffer'; // messages arrive as Blob otherwise
 
   ws.addEventListener('message', (event) => {
     const chunk = new Int16Array(event.data);
@@ -332,11 +337,10 @@ async function processLiveAudio() {
     const results = await stream.finalize();
     console.log(`Analyzed ${results.length} chunks`);
 
-    // Combine all mouth cues
-    const allMouthCues = results.flatMap(r => r.mouthCues);
-    console.log('Total mouth cues:', allMouthCues.length);
+    // Each result's cue times are relative to its chunk start
+    console.log('Mouth cues per chunk:', results.map(r => r.mouthCues.length));
 
-    pool.destroy();
+    // Keep the pool for the next stream; call pool.destroy() only when done for good
   });
 }
 ```

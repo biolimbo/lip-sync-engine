@@ -211,6 +211,9 @@ export class LipSyncEngine {
     // Lazy load WorkerPool to avoid circular dependencies
     const { WorkerPool } = await import('./WorkerPool');
     const pool = WorkerPool.getInstance();
+    // Start the shared pool if the app has not (returns at once when running).
+    // Uses the pool's own paths (CDN defaults unless WorkerPool.init() set them).
+    await pool.init();
     return pool.analyze(pcm16, options);
   }
 

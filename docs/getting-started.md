@@ -67,9 +67,9 @@ result.mouthCues.forEach(cue => {
 });
 
 // Example output:
-// 0.00s - 0.35s: X    (silence/closed)
-// 0.35s - 0.50s: D    (th sound in "the")
-// 0.50s - 0.85s: B    (p sound in "project")
+// 0.00s - 0.35s: X    (idle, before speech)
+// 0.35s - 0.50s: D    (mouth wide open)
+// 0.50s - 0.85s: B    (clenched teeth, most consonants)
 // ...
 ```
 
@@ -248,7 +248,7 @@ PocketSphinx is optimized for 16kHz:
 // ✅ Recommended
 const { pcm16 } = await recordAudio(5000, 16000);
 
-// ⚠️ Will work but may be less accurate
+// ⚠️ Works only if you also pass sampleRate: 44100 to analyze(), and may be less accurate
 const { pcm16 } = await recordAudio(5000, 44100);
 ```
 
@@ -273,7 +273,7 @@ When done with the library:
 ```typescript
 const lipSyncEngine = LipSyncEngine.getInstance();
 // Use it...
-lipSyncEngine.destroy(); // Clean up when completely done
+lipSyncEngine.destroy(); // Resets the instance. The loaded WASM module stays cached for reuse; also call WasmLoader.reset() to let it be garbage-collected
 ```
 
 ## Common Issues
@@ -295,10 +295,10 @@ await engine.init({
 });
 ```
 
-By default (with no options), the library uses:
-- `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.wasm`
-- `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.data`
-- `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.js`
+By default (with no options), the library loads the files for its own installed version, for example:
+- `https://unpkg.com/lip-sync-engine@2.0.0/dist/wasm/lip-sync-engine.wasm`
+- `https://unpkg.com/lip-sync-engine@2.0.0/dist/wasm/lip-sync-engine.data`
+- `https://unpkg.com/lip-sync-engine@2.0.0/dist/wasm/lip-sync-engine.js`
 
 ### Microphone Permission Denied
 

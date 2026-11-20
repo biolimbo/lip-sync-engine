@@ -21,11 +21,11 @@ WebAssembly port of [Rhubarb Lip Sync](https://github.com/DanielSWolf/rhubarb-li
 
 ## 🆕 What's New in 2.0.0
 
-- **Faster calls.** Each worker now keeps its PocketSphinx decoder between calls instead of rebuilding it every time (about 0.4 s per call in 1.0.x). Analysing a 250 ms chunk dropped from about 450 ms to under 100 ms, and the first chunk on a fresh pool from about 0.7 s to about 0.1 s. With `extendedShapes: ''` the output is frame-for-frame identical to 1.0.3 for the same input.
+- **Faster calls.** Each worker now keeps its PocketSphinx decoder between calls instead of rebuilding it every time (about 0.4 s per call in 1.0.x). Analysing a 250 ms chunk dropped from about 450 ms to under 100 ms, and the first chunk on a pool kept from an earlier utterance from about 480 ms to about 130 ms (starting a fresh pool still takes about 0.5 to 1.2 s, because each worker now builds its decoder during `init()`/`warmup()`). With `extendedShapes: ''` the output is frame-for-frame identical to 1.0.3 for the same input. Calls with a new `dialogText` still build a decoder for that text (each worker caches one for the most recent text), so the speed-up applies to calls without `dialogText` or with the same text as the previous call.
 - **No more out-of-memory workers.** 1.0.x workers ran out of memory after roughly 480 calls. That is fixed, so **keep the pool alive between utterances** instead of destroying and re-creating it.
 - **Better streaming quality.** `createStreamAnalyzer()` can analyse each chunk together with the audio around it (`contextMs`, `lookaheadMs`). In our streaming test this raised agreement with whole-utterance analysis from 37-68% to 82-90%, and cut false lip closures at chunk boundaries from 11-34% of frames to about 2% (see [Streaming Quality](#-streaming-quality)).
 - **Nine mouth shapes by default (breaking change).** Results now use Rhubarb's full set: A-F plus G (F, V), H (L) and X (idle), as Rhubarb's own tool does. If your avatar only has art for A-F, pass `extendedShapes: ''` to get 1.x output back. With 500 ms context and lookahead, nine-shape streaming reaches 85-86% agreement with a nine-shape whole-answer reference.
-- **New pool options and methods:** `init({ prewarm, shareAssets, recognizer })`, `pool.getMemoryStats()`, and `getResult(index)` / `end()` on the stream controller.
+- **New pool options and methods:** `init({ prewarm, shareAssets, recognizer })`, `pool.getMemoryStats()`, and `getResult(index)` / `end()` on the stream controller. Pending `init()`, `warmup()` and analysis promises now reject with the exported `WorkerPoolDestroyedError` when `destroy()` is called.
 
 See [BENCHMARK.md](./BENCHMARK.md) for the full performance measurements.
 
@@ -178,7 +178,7 @@ await lipSyncEngine.init({
 });
 ```
 
-For self-hosting WASM files, copy `node_modules/lip-sync-engine/dist/wasm/*` to your public directory and provide custom paths.
+For self-hosting, copy `node_modules/lip-sync-engine/dist/wasm/*` (and `dist/worker.js` if you use `WorkerPool`) to your public directory and pass `wasmPath`, `dataPath` and `jsPath` (plus `workerScriptUrl` in `WorkerPool.init()`).
 
 ## 📚 Examples
 
@@ -189,7 +189,7 @@ For self-hosting WASM files, copy `node_modules/lip-sync-engine/dist/wasm/*` to 
 
 ## 🎨 Mouth Shapes (Visemes)
 
-LipSyncEngine.js outputs Rhubarb Lip Sync's six basic mouth shapes (definitions from `src/cpp/core/Shape.h`):
+LipSyncEngine.js outputs Rhubarb Lip Sync's mouth shapes (definitions from `src/cpp/core/Shape.h`). The six basic shapes are:
 
 | Shape | Image | Description | Example Sounds |
 |-------|-------|-------------|----------------|
@@ -236,7 +236,7 @@ These tables use the six basic shapes (`extendedShapes: ''`), so 1.0.3 and 2.0.0
 
 | Setup | 100 ms chunks | 250 ms | 500 ms | 1000 ms |
 |---|---|---|---|---|
-| Each chunk analysed alone (1.0.3, and 2.0.0 by default) | 41.9% | 36.8% | 53.0% | 68.0% |
+| Each chunk analysed alone (1.0.3, and 2.0.0 with `extendedShapes: ''`) | 41.9% | 36.8% | 53.0% | 68.0% |
 | 2.0.0, `contextMs: 500, lookaheadMs: 500`, audio arriving faster than playback | **90.4%** | **88.4%** | **87.7%** | **87.9%** |
 | 2.0.0, same options, audio arriving at 3x playback speed | 83.4% | 81.8% | 83.1% | 85.3% |
 
@@ -244,12 +244,12 @@ These tables use the six basic shapes (`extendedShapes: ''`), so 1.0.3 and 2.0.0
 
 | Setup | 100 ms chunks | 250 ms | 500 ms | 1000 ms |
 |---|---|---|---|---|
-| Each chunk analysed alone (1.0.3, and 2.0.0 by default) | 10.8% | 33.7% | 25.6% | 24.9% |
+| Each chunk analysed alone (1.0.3, and 2.0.0 with `extendedShapes: ''`) | 10.8% | 33.7% | 25.6% | 24.9% |
 | 2.0.0, `contextMs: 500, lookaheadMs: 500`, audio arriving faster than playback | **1.3%** | **1.7%** | **1.4%** | **2.2%** |
 
 For comparison, analysing the whole answer in one call without a transcript reaches 94.2% agreement. At 100 ms chunks analysed alone, almost every chunk comes out as a single "B" shape. With `extendedShapes: ''` and no context or lookahead, 2.0.0 gives exactly the same results as 1.0.3.
 
-**Phonetic recognizer.** `init({ recognizer: 'phonetic' })` recognises phones without words. It is much cheaper (about 0.12 vs 0.39 CPU seconds per second of audio, about 80 vs 140 MB per extra worker, first chunk in about 26 ms vs 136 ms on a fresh pool), but mouth shapes are clearly worse: about 62% agreement with context and lookahead at 250 ms and 1000 ms chunks, against 87-88% for the default recognizer. It also ignores `dialogText`. Use it only on weak devices or when speed matters more than accuracy.
+**Phonetic recognizer.** `init({ recognizer: 'phonetic' })` recognises phones without words. It is much cheaper (about 0.12 vs 0.39 CPU seconds per second of audio, about 80 vs 140 MB per extra worker in the same run, first chunk after `init()`/`warmup()` in about 26 ms vs 136 ms), but mouth shapes are clearly worse: about 62% agreement with context and lookahead at 250 ms and 1000 ms chunks, against 87-88% for the default recognizer. It also ignores `dialogText`. Use it only on weak devices or when speed matters more than accuracy.
 
 ## ⚖️ How It Compares to Other Browser Lip-Sync Libraries
 
@@ -290,8 +290,9 @@ The table below summarises how each one works.
 import { analyze } from 'lip-sync-engine';
 const result = await analyze(pcm16, options);
 
-// Async analysis (non-blocking)
-import { analyzeAsync } from 'lip-sync-engine';
+// Async analysis in a Web Worker (non-blocking). Start the pool first.
+import { analyzeAsync, WorkerPool } from 'lip-sync-engine';
+await WorkerPool.getInstance(2).init();
 const result = await analyzeAsync(pcm16, options);
 
 // Using the main class
@@ -338,7 +339,7 @@ async function lipSyncUtterance(audioStream: AsyncIterable<Int16Array>) {
 // Do not call pool.destroy() between utterances; reuse the pool.
 ```
 
-The first chunk is always analysed straight away (no lookahead), so time to first audio does not grow. Later chunks wait for up to `lookaheadMs` of following audio, but never past their estimated playback time. With `contextMs` and `lookaheadMs` left at `0`, each chunk is analysed alone, exactly as in 1.0.x. `finalize()` still works and returns all results in order.
+By default the first chunk is analysed straight away (no lookahead; `firstChunkLookahead: true` changes this), so time to first audio does not grow. Later chunks wait for up to `lookaheadMs` of following audio, but never past their estimated playback time. With `contextMs` and `lookaheadMs` left at `0`, each chunk is analysed alone as soon as it is added, as in 1.0.x (add `extendedShapes: ''` for output identical to 1.0.x). `finalize()` still works and returns all results in order.
 
 Other pool options (all optional):
 

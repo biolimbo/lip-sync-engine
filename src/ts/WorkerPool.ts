@@ -1054,7 +1054,7 @@ export class StreamAnalyzerController {
         }
         if (this.firstResultAt === null) this.firstResultAt = now();
         for (const c of batch) {
-          c.resolve(cropResult(result, (c.start - from) / this.sampleRate, c.length / this.sampleRate));
+          c.resolve(cropResult(result, (c.start - from) / this.sampleRate, c.length / this.sampleRate, this.restShape()));
         }
         this.inFlight--;
         this.releaseAudio();
@@ -1067,6 +1067,11 @@ export class StreamAnalyzerController {
         this.schedule();
       }
     );
+  }
+
+  /** Shape for a chunk with no cues: idle X when enabled (default), else closed A */
+  private restShape(): string {
+    return (this.options.extendedShapes ?? 'GHX').toUpperCase().includes('X') ? 'X' : 'A';
   }
 
   /** Copy samples [from, to) of the stream */
@@ -1107,7 +1112,12 @@ function now(): number {
  * Keep the part of a result between offset and offset + duration (seconds)
  * and shift times so 0 is the start of the chunk.
  */
-function cropResult(result: LipSyncEngineResult, offset: number, duration: number): LipSyncEngineResult {
+function cropResult(
+  result: LipSyncEngineResult,
+  offset: number,
+  duration: number,
+  restShape: string
+): LipSyncEngineResult {
   const eps = 1e-6;
   const mouthCues = [];
   for (const cue of result.mouthCues) {
@@ -1120,7 +1130,7 @@ function cropResult(result: LipSyncEngineResult, offset: number, duration: numbe
     mouthCues[0].start = 0;
     mouthCues[mouthCues.length - 1].end = round2(duration);
   } else if (duration > 0) {
-    mouthCues.push({ start: 0, end: round2(duration), value: 'A' });
+    mouthCues.push({ start: 0, end: round2(duration), value: restShape });
   }
   return { ...result, mouthCues };
 }

@@ -4,7 +4,7 @@ Goal: less waiting before a voice avatar's first mouth cue, less CPU and memory 
 
 ## How it was measured
 
-- **Audio:** 116 s of real read speech (CMU ARCTIC, one female and one male speaker), joined into 8 "answers" of about 15 s each. Each answer was upsampled to 24 kHz, cut into streaming chunks of 100, 250, 500 or 1000 ms, and each chunk was resampled to 16 kHz with linear interpolation, exactly as the Librarium app does. Timing tables use 4 of the answers (about 60 s); quality tables use all 8.
+- **Audio:** 116 s of real read speech (CMU ARCTIC, one female and one male speaker), joined into 8 "answers" of about 15 s each. Each answer was upsampled to 24 kHz, cut into streaming chunks of 100, 250, 500 or 1000 ms, and each chunk was resampled to 16 kHz with linear interpolation, exactly as a streaming voice-avatar app using 1.0.3 does. Timing tables use 4 of the answers (about 60 s); quality tables use all 8.
 - **Runtime:** headless Chromium 1255 with real Web Workers, driven by `bench/run.mjs` (Linux, 8 cores). "2 cores" means the browser was pinned to 2 cores (`taskset -c 0,1`) to stand in for a tablet or kiosk.
 - **Baseline:** the published npm package 1.0.3. A from-source build of the same code with the current compiler gave the same speed within noise, so none of the gains come from the compiler.
 - **Memory:** total PSS of all browser processes, minus the same figure before the pool existed.
@@ -14,7 +14,7 @@ Goal: less waiting before a voice avatar's first mouth cue, less CPU and memory 
 
 Terms:
 
-- **Fresh pool:** create the pool, `init()`, `warmup()`, then analyse the first chunk. This is what Librarium does before every answer today.
+- **Fresh pool:** create the pool, `init()`, `warmup()`, then analyse the first chunk. A typical 1.0.x integration does this before every answer, because it destroys the pool afterwards.
 - **Warm pool:** the pool already exists (kept from an earlier answer).
 - **Per chunk:** time for one `analyze()` call on a warm worker, chunks sent one at a time.
 
@@ -27,7 +27,7 @@ Terms:
 
 ## Changes and their effect
 
-Each row adds one change on top of the previous one. 8 cores, 5 workers (Librarium's setting), 250 ms chunks unless stated, median of 4 answers.
+Each row adds one change on top of the previous one. 8 cores, 5 workers (a typical 1.0.x setting), 250 ms chunks unless stated, median of 4 answers.
 
 | Change | Fresh pool to first cue | Per chunk 250 ms (p50 / p95) | Per chunk 1000 ms (p50 / p95) | CPU per audio second (250 / 1000 ms chunks) | First chunk, warm pool | Pool memory after warmup / after use |
 |---|---|---|---|---|---|---|
@@ -48,7 +48,7 @@ Notes on each change:
 
 ## Weak devices and worker count
 
-Final build against 1.0.3, 250 ms chunks. "Streaming" means all chunks of an answer arrive at once (the voice model sends faster than real time) and each chunk is analysed alone, as Librarium does today. Stalls are moments when the player waits for a chunk's cues, summed over an answer.
+Final build against 1.0.3, 250 ms chunks. "Streaming" means all chunks of an answer arrive at once (the voice model sends faster than real time) and each chunk is analysed alone, as a 1.0.x integration does. Stalls are moments when the player waits for a chunk's cues, summed over an answer.
 
 **2 cores:**
 
@@ -77,7 +77,7 @@ Note: the 1.0.3 1-worker memory reading on 8 cores was disturbed by work still q
 What this means:
 
 - **One worker now keeps up with real-time speech.** 1.0.3 needs about 1.8 CPU seconds per second of audio at 250 ms chunks, so with one or two workers it falls behind and the player stalls for seconds. 2.0.0 needs about 0.4.
-- **Memory is about 115 MB per warm worker** (1.0.3: about 170 MB after use, and growing until it fails). On a 2-core device, 2 workers of 2.0.0 use 241 MB, against 861 MB for Librarium's current 5 workers of 1.0.3.
+- **Memory is about 115 MB per warm worker** (1.0.3: about 170 MB after use, and growing until it fails). On a 2-core device, 2 workers of 2.0.0 use 241 MB, against 861 MB for 5 workers of 1.0.3.
 - **More workers make a fresh pool slower,** especially on 2 cores (1.96 s with 5 workers, 0.67 s with 1). All workers build their decoders at the same time.
 
 ## Mouth-cue quality
@@ -133,7 +133,7 @@ Speed is unchanged. Agreement is slightly lower than with six shapes only becaus
 
 **Phonetic recognizer** (`recognizer: 'phonetic'`, new, not default):
 
-| Recognizer | Agreement (250 / 1000 ms, context and lookahead) | CPU per audio s | Memory per extra worker | First chunk, fresh pool |
+| Recognizer | Agreement (250 / 1000 ms, context and lookahead; separate run) | CPU per audio s | Memory per extra worker (separate run) | First chunk after init/warmup |
 |---|---|---|---|---|
 | Default (words) | 87.0% / 87.9% | 0.39 s | 140 MB | 136 ms |
 | Phonetic | 61.9% / 62.0% | 0.12 s | 80 MB | 26 ms |
@@ -161,7 +161,7 @@ The quality numbers above use lip-sync-engine's own whole-answer output as the r
 
 | Library and setup | Balanced accuracy | Frame accuracy | m/b/p shown closed | Vowel frames shown closed | Best shift | Balanced at 0 shift |
 |---|---|---|---|---|---|---|
-| lip-sync-engine 1.0.3, 250 ms chunks alone (Librarium today) | 33.0% | 46.6% | 90% | 29% | 0 ms | 33.0% |
+| lip-sync-engine 1.0.3, 250 ms chunks alone (typical 1.0.x use) | 33.0% | 46.6% | 90% | 29% | 0 ms | 33.0% |
 | lip-sync-engine 2.0.0, 250 ms chunks alone | 35.4% | 46.8% | 90% | 29% | 10 ms | 35.4% |
 | **lip-sync-engine 2.0.0, 250 ms chunks, context and lookahead** | **54.6%** | **68.0%** | **92%** | **4%** | -10 ms | **54.5%** |
 | lip-sync-engine 2.0.0, 1000 ms chunks, context and lookahead | 55.2% | 68.2% | 93% | 4% | -10 ms | 55.1% |
@@ -183,18 +183,18 @@ What this shows:
 
 - **lip-sync-engine 2.0.0 with context and lookahead is the most accurate,** by about 12 points of balanced accuracy. It is within 1 to 3 points of analysing the whole answer at once.
 - **It shows the lips closing for about 92% of m, b and p sounds.** headaudio and wlipsync do so for under half.
-- **Librarium's current setup is the least accurate of all,** below both lightweight libraries: short chunks analysed alone with 1.0.3. The mouth closes on 29% of vowel frames, and it has no f/v shape.
+- **The typical 1.0.x setup is the least accurate of all,** below both lightweight libraries: short chunks analysed alone with 1.0.3. The mouth closes on 29% of vowel frames, and it has no f/v shape.
 - **The lightweight libraries win in places.** wlipsync is better at wide-open vowels (47%) and rounded vowels (75%), and headaudio at wide-open vowels (24%). Rhubarb shows many wide vowels with its medium-open shape C, which counts as "other" here.
 - **Cost is the other side.** In Node on this machine, headaudio took 7 ms and wlipsync 9 ms of CPU per second of audio, against roughly 300 to 400 ms for lip-sync-engine. They also run with about 30 to 40 ms of delay and no start-up cost.
 - **Limits of this test.**
   - Absolute numbers are modest because phone labels don't match visible mouth shapes exactly (neighbouring sounds blend), and five classes is a coarse scale. Use the numbers to compare libraries, not as absolute accuracy.
   - wlipsync would likely improve with a profile made for these voices.
-  - Only two speakers of read speech were tested, not the text-to-speech voices Librarium uses.
+  - Only two speakers of read speech were tested, not the text-to-speech voices a voice avatar typically uses.
 
-## Recommendations for a streaming voice avatar (Librarium)
+## Recommendations for a streaming voice avatar
 
 1. **Create the pool once and keep it.** Stop destroying it after each answer. The first chunk of an answer then takes about 0.1 s instead of about 1.5 s. Destroying the pool was also hiding the 1.0.3 memory failure, which 2.0.0 no longer has.
 2. **Use 2 workers instead of 5.** That saves about 340 MB with no stalls in these tests. Use 1 on very weak devices.
 3. **Switch to `createStreamAnalyzer({ sampleRate: 16000, contextMs: 500, lookaheadMs: 500 })`.** Use `getResult(i)` for each chunk, and call `end()` when the response's audio is done. This is the big quality gain at the same latency.
-4. **Nothing to do for nine shapes.** They are the 2.0.0 default, and Librarium's avatar already supports all nine.
+4. **Nine shapes are the 2.0.0 default.** If your avatar has no art for G, H and X, pass `extendedShapes: ''`.
 5. **If the voice model's deltas are around 100 ms,** join them into chunks of at least 250 ms before analysing, or accept chunk-by-chunk quality.

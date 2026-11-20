@@ -541,7 +541,7 @@
         workerMetricEl.style.display = currentMode === 'chunked' ? 'block' : 'none';
 
         // Start the remaining workers for chunked mode
-        if (currentMode === 'chunked' && workerPool) {
+        if (currentMode === 'chunked' && poolInitPromise) {
           statusEl.textContent = 'Warming up worker pool...';
           statusEl.className = 'status analyzing';
           try {
@@ -556,11 +556,13 @@
       });
     });
 
-    // Start the other workers once (later calls reuse the same promise)
+    // Start the other workers once (later calls reuse the same promise).
+    // Waits for init(): chunked mode can be selected while the pool starts.
+    let poolInitPromise = null;
     let warmupPromise = null;
     function warmup() {
       if (!warmupPromise) {
-        warmupPromise = workerPool.warmup();
+        warmupPromise = poolInitPromise.then(() => workerPool.warmup());
         warmupPromise.catch(() => { warmupPromise = null; });
       }
       return warmupPromise;
@@ -583,7 +585,8 @@
         // Worker pool (worker and chunked modes). init() starts one worker;
         // warmup() starts the rest when chunked mode is selected.
         workerPool = WorkerPool.getInstance(MAX_WORKERS);
-        await workerPool.init({ ...WASM_PATHS, workerScriptUrl: `${DIST}worker.js` });
+        poolInitPromise = workerPool.init({ ...WASM_PATHS, workerScriptUrl: `${DIST}worker.js` });
+        await poolInitPromise;
 
         statusEl.textContent = 'Ready! Select mode and analyze audio';
         statusEl.className = 'status success';

@@ -51,10 +51,10 @@ await lipSyncEngine.init({
 });
 ```
 
-**Default CDN URLs:**
-- `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.wasm`
-- `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.data`
-- `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.js`
+**Default CDN URLs** (`<version>` is the installed package version):
+- `https://unpkg.com/lip-sync-engine@<version>/dist/wasm/lip-sync-engine.wasm`
+- `https://unpkg.com/lip-sync-engine@<version>/dist/wasm/lip-sync-engine.data`
+- `https://unpkg.com/lip-sync-engine@<version>/dist/wasm/lip-sync-engine.js`
 
 #### `analyze(pcm16, options?)`
 
@@ -80,7 +80,7 @@ const result = await lipSyncEngine.analyze(pcm16, {
 
 #### `analyzeAsync(pcm16, options?)`
 
-Analyze audio using Web Worker (non-blocking).
+Analyze audio in a Web Worker (non-blocking), using the shared `WorkerPool`. Starts the pool with its own settings if it is not running yet (CDN paths by default). Paths passed to `LipSyncEngine.init()` are not used; to self-host, call `WorkerPool.getInstance().init({ ...paths, workerScriptUrl })` first.
 
 **Parameters:**
 - `pcm16: Int16Array` - 16-bit PCM audio buffer (mono)
@@ -97,7 +97,7 @@ const result = await lipSyncEngine.analyzeAsync(pcm16, {
 
 #### `destroy()`
 
-Clean up resources and destroy the instance.
+Drops this instance; the next `getInstance()` returns a new one. The loaded WASM module and its memory stay cached and are reused by later instances (call `WasmLoader.reset()` as well to let them be garbage-collected).
 
 **Example:**
 ```typescript
@@ -124,13 +124,15 @@ class WorkerPool {
 }
 ```
 
+`WorkerPoolInitOptions`, `WorkerPoolStats` and `StreamAnalyzerStats` are names used in this document only; they are not exported. In TypeScript use `Parameters<WorkerPool['init']>[0]`, `ReturnType<WorkerPool['getStats']>` and `ReturnType<StreamAnalyzerController['getStats']>`. Exported option types: `PrewarmMode`, `RecognizerKind`, `StreamAnalyzerOptions`.
+
 #### `getInstance(maxWorkers?, workerScriptUrl?)`
 
 Get the singleton WorkerPool instance.
 
 **Parameters:**
 - `maxWorkers?: number` - Maximum number of workers (default: `navigator.hardwareConcurrency` or 4)
-- `workerScriptUrl?: string` - Custom worker script URL (default: '/dist/worker.js')
+- `workerScriptUrl?: string` - Custom worker script URL (default: `https://unpkg.com/lip-sync-engine@<version>/dist/worker.js`)
 
 **Returns:** `WorkerPool` - The singleton instance
 
@@ -193,7 +195,7 @@ await pool.init({
 
 Pre-create all workers up to maxWorkers. Call during app initialization to eliminate worker creation overhead for streaming workloads.
 
-Rejects as soon as one worker fails to start. Workers that started successfully stay in the pool, and calling `warmup()` again only starts the missing ones. Concurrent calls share one warmup. Rejects with [`WorkerPoolDestroyedError`](#workerpooldestroyederror) if `destroy()` is called first.
+Rejects as soon as one worker fails to start. Workers that started successfully stay in the pool, and calling `warmup()` again only starts the missing ones. Concurrent calls share one warmup. Rejects with `Error('WorkerPool not initialized. Call init() first.')` if `init()` has not finished, and with [`WorkerPoolDestroyedError`](#workerpooldestroyederror) if `destroy()` is called before it finishes.
 
 **Returns:** `Promise<void>`
 
@@ -216,9 +218,9 @@ Analyze audio in a Web Worker (non-blocking).
 
 **Benefits:**
 - ✅ Non-blocking - UI stays responsive
-- ✅ Decoder reuse - 500-700ms faster after first call
+- ✅ Decoder reuse - each worker builds its speech decoder once (during `init()`/`warmup()` by default), saving about 0.4 s per call compared with 1.x
 - ✅ Automatic worker management
-- ✅ Zero-copy buffer transfer (when possible)
+- ✅ Your buffer is copied and the copy is transferred to the worker, so your array stays usable
 
 **Example:**
 ```typescript
@@ -242,9 +244,9 @@ Analyze multiple audio chunks in parallel using worker pool.
 **Returns:** `Promise<LipSyncEngineResult[]>` - Results in same order as input
 
 **Performance:**
-- 🚀 Parallel processing across multiple workers
-- ⚡ ~5x faster for 5 chunks (vs sequential)
+- 🚀 Runs in parallel across the workers that have started. `init()` starts one; call `await pool.warmup()` to start up to `maxWorkers`. The speed-up is limited by started workers and CPU cores.
 - 🎯 Automatic load balancing
+- Each chunk is analysed on its own (no context across chunks); for streaming speech use `createStreamAnalyzer()` with `contextMs`/`lookaheadMs`.
 
 **Example:**
 ```typescript
@@ -256,13 +258,19 @@ for (let i = 0; i < fullAudio.length; i += chunkSize) {
   chunks.push(fullAudio.slice(i, i + chunkSize));
 }
 
-// Process all chunks in parallel
+// Process all chunks in parallel (start all workers first)
+await pool.warmup();
 const results = await pool.analyzeChunks(chunks, {
   dialogText: "Dialog for all chunks"
 });
 
-// Combine results
-const allCues = results.flatMap(r => r.mouthCues);
+// Combine results: each chunk's cue times start at 0, so add offsets
+let offset = 0;
+const allCues = results.flatMap((r, i) => {
+  const cues = r.mouthCues.map(c => ({ ...c, start: c.start + offset, end: c.end + offset }));
+  offset += chunks[i].length / 16000;
+  return cues;
+});
 ```
 
 #### `createStreamAnalyzer(options?)`
@@ -270,7 +278,7 @@ const allCues = results.flatMap(r => r.mouthCues);
 Create a streaming analyzer for dynamic, real-time chunk processing. Perfect for live audio streams, WebSockets, or MediaRecorder.
 
 **Parameters:**
-- `options?: LipSyncEngineOptions` - Analysis options (applied to all chunks)
+- `options?: StreamAnalyzerOptions` - `LipSyncEngineOptions` applied to all chunks, plus the windowing options in [`StreamAnalyzerOptions`](#streamanalyzeroptions)
 
 **Returns:** `StreamAnalyzerController`
 
@@ -285,14 +293,16 @@ Create a streaming analyzer for dynamic, real-time chunk processing. Perfect for
 await pool.warmup(); // Pre-create workers
 
 const stream = pool.createStreamAnalyzer({
-  dialogText: "Expected dialog",
-  sampleRate: 16000
+  sampleRate: 16000,
+  contextMs: 500,   // earlier audio analysed with each chunk
+  lookaheadMs: 500  // later audio, waited for only while playback allows
 });
 
 // Add chunks as they arrive (non-blocking!)
 for await (const chunk of audioStream) {
   stream.addChunk(chunk); // Returns immediately
 }
+stream.end(); // no more audio
 
 // Get all results in order
 const results = await stream.finalize();
@@ -320,7 +330,7 @@ console.log(`Queue: ${stats.queuedJobs} jobs waiting`);
 
 #### `destroy()`
 
-Terminate all workers, including workers that are still starting, and clean up resources. Pending `init()`, `warmup()`, and analysis promises reject with [`WorkerPoolDestroyedError`](#workerpooldestroyederror). The next `getInstance()` call returns a new pool.
+Terminate all workers, including workers that are still starting, and clean up resources. Pending `init()`, `warmup()`, and analysis promises reject with [`WorkerPoolDestroyedError`](#workerpooldestroyederror). In a stream analyzer using `contextMs`/`lookaheadMs`, chunks not yet sent to a worker reject with `Error('WorkerPool not initialized...')` instead. The next `getInstance()` call returns a new pool.
 
 **Example:**
 ```typescript
@@ -391,7 +401,7 @@ Promise for one chunk's result. Use it to play each chunk as soon as its cues ar
 
 #### `end()`
 
-Tells the controller no more audio is coming, so chunks waiting for lookahead are analysed straight away. Call it when the utterance's audio is complete. `finalize()` calls it too.
+Tells the controller no more audio is coming, so chunks waiting for lookahead are analysed straight away. Call it when the utterance's audio is complete. `finalize()` calls it too. After `end()` (or `finalize()`), `addChunk()` throws.
 
 #### `addChunk(chunk)`
 
@@ -610,6 +620,8 @@ interface LipSyncEngineResult {
 }
 ```
 
+`metadata` is filled with `duration`, `sampleRate` and `dialogText` by `LipSyncEngine.analyze()` only. `WorkerPool` results carry the engine's own `{ soundFile, duration }`, and in windowed stream results `duration` is the analysed window's. Use `mouthCues` for timing.
+
 ### `LipSyncEngineOptions`
 
 Options for lip-sync analysis.
@@ -630,9 +642,11 @@ Options for WASM loading.
 
 ```typescript
 interface WasmLoaderOptions {
-  wasmPath?: string;  // Path to .wasm file
-  dataPath?: string;  // Path to .data file
-  jsPath?: string;    // Path to .js file
+  wasmPath?: string;                // Path to .wasm file
+  dataPath?: string;                // Path to .data file
+  jsPath?: string;                  // Path to .js file
+  wasmModule?: WebAssembly.Module;  // Already compiled .wasm (skips download and compile). Since 2.0.0
+  dataBuffer?: ArrayBuffer;         // Contents of the .data file (skips its download; used once). Since 2.0.0
 }
 ```
 
@@ -640,15 +654,17 @@ interface WasmLoaderOptions {
 
 | Value | Name | Description | Phonemes |
 |-------|------|-------------|----------|
-| X | Closed/Rest | Mouth closed or at rest | Silence |
-| A | Open | Mouth wide open | AH, AA, AO, AW |
-| B | Lips Together | Lips pressed together | P, B, M |
-| C | Rounded | Lips rounded | SH, CH, JH, ZH |
-| D | Tongue-Teeth | Tongue touching teeth | TH, DH, T, D, N, L |
-| E | Slightly Open | Slightly open | EH, AE, UH, ER |
-| F | F/V Sound | Lower lip touching upper teeth | F, V |
-| G | Open Back | Open with tongue back | K, G, NG |
-| H | Wide Open | Wide open with spread lips | IY, IH, EY, AY |
+| X | Idle | Mouth at rest | Silence, pauses |
+| A | Closed | Lips pressed together | M, B, P |
+| B | Clenched teeth | Slightly open, teeth together | Most consonants (K, S, T), EE |
+| C | Open | Mouth open | EH, AH, EY (men, sun, say) |
+| D | Wide open | Mouth wide open | AA, AE, AY (father, bat, why) |
+| E | Rounded | Slightly rounded | AO, ER (off) |
+| F | Puckered | Lips puckered | UW, OW, W (you, boy, way) |
+| G | F/V | Upper teeth on lower lip | F, V |
+| H | L | Tongue raised behind teeth | L |
+
+Definitions follow `src/cpp/core/Shape.h`. G, H and X appear only when `extendedShapes` includes them (the default since 2.0.0).
 
 ## Best Practices
 
@@ -674,7 +690,7 @@ const result = await analyze(pcm16);
 
 ### Memory Management
 
-Clean up when done:
+Call `destroy()` when completely done. The WASM module stays cached for reuse (call `WasmLoader.reset()` too if you want it garbage-collected). For `WorkerPool`, keep the pool alive between utterances and call `pool.destroy()` only when done for good.
 
 ```typescript
 const lipSyncEngine = LipSyncEngine.getInstance();
@@ -683,7 +699,7 @@ await lipSyncEngine.init();
 // Use it...
 const result = await lipSyncEngine.analyze(pcm16);
 
-// Clean up when completely done
+// When completely done
 lipSyncEngine.destroy();
 ```
 
