@@ -1,23 +1,23 @@
 # Vue Example
 
-Complete working Vue 3 application demonstrating LipSyncEngine.js integration with a modern dark mode UI.
+Complete working Vue 3 application demonstrating LipSyncEngine.js integration with a dark mode UI.
 
 ## Features
 
 - 🎙️ **Record Audio** - Record from microphone with adjustable duration (5-60 seconds)
 - 📁 **Load Audio File** - Load any audio file (MP3, WAV, etc.)
 - 📝 **Dialog Text Input** - Provide optional text for better accuracy
-- ⚡ **Three Execution Modes**:
-  - Single Thread - Traditional blocking mode
-  - Web Worker - Non-blocking with single worker
-  - Chunked Workers - Parallel processing with multiple workers
+- ⚡ **Four Execution Modes**:
+  - Single Thread - Runs on the main thread (blocks the UI)
+  - Web Worker - Non-blocking, one worker
+  - Chunked Workers - Splits the audio and analyses the chunks in parallel with `analyzeChunks()`. Each chunk is analysed on its own, so cues near chunk edges are less accurate.
+  - Streaming - Feeds the chunks to `createStreamAnalyzer()` with the recommended 2.0.0 settings (500 ms of context and lookahead), as a live source would
 - 📊 **Performance Metrics** - View execution time, cue count, and worker usage
 - 🎛️ **Adjustable Settings** - Control recording duration and chunk size
 - 🎭 **Real-time Viseme Display** - Animated mouth shapes synchronized with audio playback
 - ▶️ **Replay Button** - Play back animations on demand
 - 📋 **Results Timeline** - View all detected mouth cues with timestamps
-- 📝 **Timestamped Logs** - Terminal-style logs showing all processing steps
-- 🎨 **Modern Dark Mode UI** - Professional, contemporary interface
+- 📝 **Timestamped Logs** - Processing steps with color-coded types
 
 ## Setup
 
@@ -31,34 +31,60 @@ npm run dev
 
 Then open http://localhost:3001
 
-## WASM Files via CDN
+### Testing a local build
 
-This example uses unpkg.com CDN to load WASM files - **this is the recommended approach for end users** as it requires no additional configuration or file copying.
+Until `lip-sync-engine@2.0.0` is on npm (and unpkg), install the package built in this repository instead. This does not change `package.json`:
 
-The initialization uses CDN URLs:
-```typescript
-await lipSyncEngine.init({
-  wasmPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.wasm',
-  dataPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.data',
-  jsPath: 'https://unpkg.com/lip-sync-engine@latest/dist/wasm/lip-sync-engine.js'
-});
+```bash
+# From the repository root
+npm run build
+# From this example
+npm install --no-save ../..
 ```
 
-For production, pin to a specific version:
+The WASM files and the worker script still load from unpkg by default (see below). To use the local ones, pass their paths to `init()`.
+
+## WASM Files and Worker Script
+
+With no options, `init()` loads the `.wasm`, `.data` and Emscripten `.js` files (and, for `WorkerPool`, the worker script) from unpkg at the installed package version. Nothing needs to be copied or configured, and this works with any bundler.
+
+To self-host them, copy `node_modules/lip-sync-engine/dist/` to your public folder and pass absolute URLs (workers resolve relative paths against the worker script, not the page):
+
 ```typescript
-await lipSyncEngine.init({
-  wasmPath: 'https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.wasm',
-  dataPath: 'https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.data',
-  jsPath: 'https://unpkg.com/lip-sync-engine@1.0.2/dist/wasm/lip-sync-engine.js'
-});
+const base = new URL('/lip-sync-engine/', location.href).href;
+const paths = {
+  wasmPath: `${base}wasm/lip-sync-engine.wasm`,
+  dataPath: `${base}wasm/lip-sync-engine.data`,
+  jsPath: `${base}wasm/lip-sync-engine.js`,
+};
+
+await LipSyncEngine.getInstance().init(paths);
+await WorkerPool.getInstance(4).init({ ...paths, workerScriptUrl: `${base}worker.js` });
 ```
+
+## Keep the Pool Alive
+
+The example creates the engine and the worker pool once, at module level, and shares them across modes, analyses and component instances. Since 2.0.0 each worker keeps its speech decoder between calls, so only pool start-up pays for building it. Destroying and re-creating the pool for every analysis (or on every mode change) pays that cost again each time. Call `WorkerPool.getInstance().destroy()` only when the app no longer needs lip sync.
+
+The pool is capped at 4 workers because each worker holds its own copy of the models (about 39 MB plus the WebAssembly heap).
+
+## Streaming
+
+Short chunks analysed on their own lose most of their mouth shapes. The streaming mode uses the recommended setup:
+
+```typescript
+const stream = pool.createStreamAnalyzer({ sampleRate: 16000, contextMs: 500, lookaheadMs: 500 });
+const index = stream.addChunk(chunk);           // as audio arrives
+stream.getResult(index).then(playChunk);        // cue times are relative to the chunk
+stream.end();                                   // when the utterance is complete
+```
+
+See [`../stream-example.ts`](../stream-example.ts) for WebSocket and microphone sources.
 
 ## Project Structure
 
 ```
 examples/vue/
-├── public/
-│   └── visemes/              # Symlink to shared viseme images
 ├── src/
 │   ├── composables/
 │   │   └── useLipSyncEngine.ts # Vue composable
@@ -68,93 +94,42 @@ examples/vue/
 ├── index.html                  # HTML template
 ├── package.json                # Dependencies
 ├── tsconfig.json               # TypeScript config
-└── vite.config.ts              # Vite config
+└── vite.config.ts              # Vite config (serves ../assets as /visemes/...)
 ```
 
 ## How It Works
 
 ### Composable
 
-The `useLipSyncEngine` composable provides a clean API:
+The `useLipSyncEngine` composable exposes the analysis state and settings as refs:
 
 ```vue
 <script setup lang="ts">
 import { useLipSyncEngine } from './composables/useLipSyncEngine';
 import { recordAudio } from 'lip-sync-engine';
 
-const { analyze, result, isAnalyzing, error, reset } = useLipSyncEngine();
+const { analyze, result, isAnalyzing, isInitialized, setMode } = useLipSyncEngine();
 
 const handleRecord = async () => {
-  const { pcm16 } = await recordAudio(5000);
-  await analyze(pcm16, { dialogText: "Hello world" });
+  const { pcm16 } = await recordAudio(5000); // mono 16 kHz Int16
+  await analyze(pcm16, { dialogText: 'Hello world', sampleRate: 16000 });
 };
 </script>
 
 <template>
-  <button @click="handleRecord" :disabled="isAnalyzing">
+  <button @click="setMode('streaming')">Streaming</button>
+  <button @click="handleRecord" :disabled="!isInitialized || isAnalyzing">
     {{ isAnalyzing ? 'Analyzing...' : 'Record' }}
   </button>
+  <p v-if="result">{{ result.mouthCues.length }} cues</p>
 </template>
 ```
+
+`analyze()` throws on failure (and also sets `error`).
 
 ### Viseme Animation
 
-The example demonstrates synchronized viseme animation with Vue reactivity:
-
-```vue
-<script setup lang="ts">
-import { ref, watch } from 'vue';
-
-const currentViseme = ref('X');
-const audioBuffer = ref<AudioBuffer | null>(null);
-
-// Play animation synchronized with audio
-function playAnimation(mouthCues, buffer) {
-  const audioContext = new AudioContext();
-  const source = audioContext.createBufferSource();
-  source.buffer = buffer;
-  source.connect(audioContext.destination);
-  source.start(0);
-
-  // Animate visemes frame by frame
-  function updateViseme() {
-    const elapsed = audioContext.currentTime - startTime;
-    // Update current viseme based on elapsed time
-    currentViseme.value = mouthCues[currentCueIndex].value;
-    requestAnimationFrame(updateViseme);
-  }
-}
-
-// Auto-play when result is available
-watch(result, (newResult) => {
-  if (newResult && audioBuffer.value) {
-    playAnimation(newResult.mouthCues, audioBuffer.value);
-  }
-});
-</script>
-
-<template>
-  <div class="viseme-images">
-    <img
-      v-for="viseme in ['X', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']"
-      :key="viseme"
-      :src="`/visemes/${viseme}.png`"
-      :class="{ active: currentViseme === viseme }"
-    />
-  </div>
-</template>
-```
-
-### Key Features
-
-1. **Composition API** - Uses Vue 3's `<script setup>` syntax
-2. **Reactive State** - All state is reactive using `ref()`
-3. **Automatic Cleanup** - Resources freed on unmount
-4. **Error Handling** - Comprehensive error states
-5. **TypeScript** - Full type safety
-6. **Async Analysis** - Non-blocking UI with `analyzeAsync()`
-7. **Audio Playback** - Web Audio API integration for synchronized animation
-8. **Timestamped Logging** - Detailed logs with color-coded types
+`App.vue` plays the audio with one shared `AudioContext` (closed in `onUnmounted`) and picks the viseme for the current playback time on every animation frame. A `watch` on `result` plays each new result once.
 
 ## Building for Production
 
@@ -165,8 +140,8 @@ npm run preview
 
 ## Technologies
 
-- Vue 3
+- Vue 3 (Composition API, `<script setup>`)
 - TypeScript
 - Vite
-- LipSyncEngine.js (via npm + CDN for WASM)
+- LipSyncEngine.js (npm package, WASM files from unpkg by default)
 - Web Audio API

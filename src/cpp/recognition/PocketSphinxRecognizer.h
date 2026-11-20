@@ -12,3 +12,9 @@ public:
 		ProgressSink& progressSink
 	) const override;
 };
+
+// Builds the default (no dialog text) decoder ahead of the first analysis.
+void prewarmPocketSphinxDecoder();
+
+// Frees all cached decoders.
+void releasePocketSphinxDecoders();

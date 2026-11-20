@@ -465,7 +465,22 @@
   </div>
 
   <script type="module">
-    import { LipSyncEngine, WorkerPool, recordAudio, loadAudio } from 'https://unpkg.com/lip-sync-engine@latest/dist/index.mjs';
+    // Library files come from unpkg. To try a local build instead, serve the
+    // repository root and open /examples/vanilla/?local, which loads ../../dist.
+    const useLocalBuild = new URLSearchParams(location.search).has('local');
+    const DIST = useLocalBuild
+      ? new URL('../../dist/', location.href).href
+      : 'https://unpkg.com/lip-sync-engine@2.0.0/dist/';
+    const WASM_PATHS = {
+      wasmPath: `${DIST}wasm/lip-sync-engine.wasm`,
+      dataPath: `${DIST}wasm/lip-sync-engine.data`,
+      jsPath: `${DIST}wasm/lip-sync-engine.js`
+    };
+    // Each worker holds its own copy of the models, so cap the pool size.
+    const MAX_WORKERS = Math.min(navigator.hardwareConcurrency || 4, 4);
+
+    // Loaded in init() so a failed download shows up as an error on the page
+    let LipSyncEngine, WorkerPool, recordAudio, loadAudio;
 
     // DOM elements
     const modeButtons = document.querySelectorAll('.mode-btn');
@@ -503,6 +518,8 @@
     let lastResult = null;
     let lastAudioBuffer = null;
     let currentPlayback = null;
+    let animationFrame = null;
+    let audioContext = null; // one AudioContext for all playback
 
     // Slider updates
     recordingDurationInput.addEventListener('input', (e) => {
@@ -523,47 +540,53 @@
         chunkSettings.style.display = currentMode === 'chunked' ? 'block' : 'none';
         workerMetricEl.style.display = currentMode === 'chunked' ? 'block' : 'none';
 
-        // Pre-warm worker pool for chunked mode
-        if (currentMode === 'chunked' && workerPool) {
-          console.log('Warming up worker pool for chunked mode...');
+        // Start the remaining workers for chunked mode
+        if (currentMode === 'chunked' && poolInitPromise) {
           statusEl.textContent = 'Warming up worker pool...';
           statusEl.className = 'status analyzing';
           try {
-            await workerPool.warmup();
-            const stats = workerPool.getStats();
-            console.log(`✅ WorkerPool ready (${stats.totalWorkers} workers)`);
-            statusEl.textContent = 'Ready! Select mode and analyze audio';
-            statusEl.className = 'status success';
+            await warmup();
+            console.log(`WorkerPool ready (${workerPool.getStats().totalWorkers} workers)`);
           } catch (err) {
             console.error('Warmup failed:', err);
-            statusEl.textContent = 'Ready! Select mode and analyze audio';
-            statusEl.className = 'status success';
           }
+          statusEl.textContent = 'Ready! Select mode and analyze audio';
+          statusEl.className = 'status success';
         }
       });
     });
 
+    // Start the other workers once (later calls reuse the same promise).
+    // Waits for init(): chunked mode can be selected while the pool starts.
+    let poolInitPromise = null;
+    let warmupPromise = null;
+    function warmup() {
+      if (!warmupPromise) {
+        warmupPromise = poolInitPromise.then(() => workerPool.warmup());
+        warmupPromise.catch(() => { warmupPromise = null; });
+      }
+      return warmupPromise;
+    }
+
     // Initialize
-    // NOTE: This vanilla example eagerly initializes both engines for simplicity
-    // In production, you may want to initialize based on selected mode (see React/Vue/Svelte examples)
+    // This example starts both the main-thread engine and the worker pool up
+    // front for simplicity. Both stay alive for the whole page: since 2.0.0 a
+    // worker keeps its speech decoder between calls, so do not destroy and
+    // re-create the pool per analysis.
     async function init() {
       try {
         statusEl.textContent = 'Initializing engines...';
+        ({ LipSyncEngine, WorkerPool, recordAudio, loadAudio } = await import(`${DIST}index.mjs`));
 
-        // Initialize main thread engine (for single mode)
-        console.log('Initializing LipSyncEngine...');
+        // Main thread engine (single mode)
         lipSyncEngine = LipSyncEngine.getInstance();
-        // No options needed - uses CDN by default
-        await lipSyncEngine.init();
-        console.log('LipSyncEngine ready');
+        await lipSyncEngine.init(WASM_PATHS);
 
-        // Initialize worker pool (for worker and chunked modes)
-        console.log('Initializing WorkerPool...');
-        workerPool = WorkerPool.getInstance();
-        // No options needed - uses CDN by default
-        await workerPool.init();
-        console.log('WorkerPool ready (1 worker created)');
-        console.log('Note: Additional workers will be created on-demand for chunked mode');
+        // Worker pool (worker and chunked modes). init() starts one worker;
+        // warmup() starts the rest when chunked mode is selected.
+        workerPool = WorkerPool.getInstance(MAX_WORKERS);
+        poolInitPromise = workerPool.init({ ...WASM_PATHS, workerScriptUrl: `${DIST}worker.js` });
+        await poolInitPromise;
 
         statusEl.textContent = 'Ready! Select mode and analyze audio';
         statusEl.className = 'status success';
@@ -576,11 +599,11 @@
 
     // Split audio into chunks
     function splitIntoChunks(pcm16, chunkDurationSec, sampleRate = 16000) {
-      const chunkSize = chunkDurationSec * sampleRate;
+      const chunkSize = Math.round(chunkDurationSec * sampleRate);
       const chunks = [];
 
       for (let i = 0; i < pcm16.length; i += chunkSize) {
-        chunks.push(pcm16.slice(i, Math.min(i + chunkSize, pcm16.length)));
+        chunks.push(pcm16.subarray(i, i + chunkSize));
       }
 
       return chunks;
@@ -611,8 +634,12 @@
           });
 
         } else if (currentMode === 'chunked') {
+          // Each chunk is analysed on its own, so cues near chunk edges are
+          // less accurate. For short streaming chunks use
+          // pool.createStreamAnalyzer({ contextMs: 500, lookaheadMs: 500 }).
           const chunkSize = parseInt(chunkSizeInput.value);
           const chunks = splitIntoChunks(pcm16, chunkSize);
+          await warmup();
           statusEl.textContent = `Processing ${chunks.length} chunks in parallel...`;
 
           const results = await workerPool.analyzeChunks(chunks, {
@@ -620,7 +647,7 @@
             sampleRate: 16000
           });
 
-          // Combine results
+          // Combine results (cue times are relative to each chunk)
           const allCues = [];
           let timeOffset = 0;
 
@@ -632,11 +659,11 @@
                 value: cue.value
               });
             });
-            timeOffset += chunkSize;
+            timeOffset += chunks[i].length / 16000;
           });
 
           result = { mouthCues: allCues };
-          workersUsedEl.textContent = Math.min(chunks.length, navigator.hardwareConcurrency || 4);
+          workersUsedEl.textContent = Math.min(chunks.length, workerPool.getStats().totalWorkers);
         }
 
         const endTime = performance.now();
@@ -688,20 +715,37 @@
       visemeLabelEl.textContent = `${visemeNames[viseme]} (${viseme})`;
     }
 
+    function stopPlayback() {
+      if (animationFrame !== null) {
+        cancelAnimationFrame(animationFrame);
+        animationFrame = null;
+      }
+      if (currentPlayback) {
+        currentPlayback.onended = null;
+        currentPlayback.stop();
+        currentPlayback = null;
+      }
+      setViseme('X');
+      playBtn.disabled = false;
+      playBtn.textContent = '▶ Play';
+    }
+
     // Play animation
     function playAnimation(mouthCues, audioBuffer) {
       if (!audioBuffer) return;
+      stopPlayback();
 
       playBtn.disabled = true;
       playBtn.textContent = '⏸ Playing';
 
-      const audioContext = new AudioContext();
+      if (!audioContext) audioContext = new AudioContext();
+      audioContext.resume();
       const source = audioContext.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(audioContext.destination);
 
       const startTime = audioContext.currentTime;
-      source.start(0);
+      source.start();
       currentPlayback = source;
 
       let currentCueIndex = 0;
@@ -715,15 +759,17 @@
 
         if (currentCueIndex < mouthCues.length) {
           setViseme(mouthCues[currentCueIndex].value);
-          requestAnimationFrame(updateViseme);
+          animationFrame = requestAnimationFrame(updateViseme);
         } else {
           setViseme('X');
+          animationFrame = null;
         }
       }
 
       updateViseme();
 
       source.onended = () => {
+        currentPlayback = null;
         setViseme('X');
         playBtn.disabled = false;
         playBtn.textContent = '▶ Play';
@@ -733,7 +779,6 @@
     // Replay animation
     playBtn.addEventListener('click', () => {
       if (lastResult && lastAudioBuffer) {
-        if (currentPlayback) currentPlayback.stop();
         playAnimation(lastResult.mouthCues, lastAudioBuffer);
       }
     });

@@ -62,7 +62,36 @@ export class WasmLoader {
       wasmPath = `https://unpkg.com/lip-sync-engine@${version}/dist/wasm/lip-sync-engine.wasm`,
       dataPath = `https://unpkg.com/lip-sync-engine@${version}/dist/wasm/lip-sync-engine.data`,
       jsPath = `https://unpkg.com/lip-sync-engine@${version}/dist/wasm/lip-sync-engine.js`,
+      wasmModule,
     } = options;
+    let dataBuffer = options.dataBuffer;
+
+    // Optional Emscripten hooks: reuse an already compiled module and
+    // already downloaded .data contents instead of fetching them again.
+    const hooks: Record<string, unknown> = {};
+    // Emscripten has no failure callback for instantiateWasm, so report
+    // instantiation errors through a promise raced against module creation.
+    let hookFailed: (error: unknown) => void = () => {};
+    const hookFailure = new Promise<never>((_, reject) => { hookFailed = reject; });
+    hookFailure.catch(() => {});
+    if (wasmModule) {
+      hooks.instantiateWasm = (
+        imports: WebAssembly.Imports,
+        receive: (instance: WebAssembly.Instance, module: WebAssembly.Module) => void
+      ) => {
+        WebAssembly.instantiate(wasmModule, imports)
+          .then((instance) => receive(instance, wasmModule))
+          .catch((error) => hookFailed(error));
+        return {};
+      };
+    }
+    if (dataBuffer) {
+      hooks.getPreloadedPackage = () => {
+        const buffer = dataBuffer;
+        dataBuffer = undefined; // used once; let it be collected with the FS
+        return buffer;
+      };
+    }
 
     // Detect if we're in a worker context
     const isWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
@@ -83,7 +112,8 @@ export class WasmLoader {
             );
           }
 
-          const module = await createModule({
+          const module = await Promise.race([hookFailure, createModule({
+            ...hooks,
             locateFile: (path: string) => {
               if (path.endsWith('.wasm')) {
                 return wasmPath;
@@ -93,7 +123,7 @@ export class WasmLoader {
               }
               return path;
             },
-          });
+          })]);
 
           resolve(module as LipSyncEngineModule);
         } catch (error) {
@@ -122,7 +152,8 @@ export class WasmLoader {
               );
             }
 
-            const module = await createModule({
+            const module = await Promise.race([hookFailure, createModule({
+              ...hooks,
               locateFile: (path: string) => {
                 if (path.endsWith('.wasm')) {
                   return wasmPath;
@@ -132,7 +163,7 @@ export class WasmLoader {
                 }
                 return path;
               },
-            });
+            })]);
 
             resolve(module as LipSyncEngineModule);
           } catch (error) {

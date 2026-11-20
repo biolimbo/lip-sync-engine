@@ -1,9 +1,32 @@
-name: Publish to NPM
+name: Publish to npm
+
+# Publishes with npm trusted publishing (OIDC): no npm token is stored in the
+# repository. The package's trusted publisher on npmjs.com must name this
+# repository and the workflow file `publish.yml`.
+#
+# - Tag `vX.Y.Z` publishes X.Y.Z under the `latest` dist-tag. package.json
+#   must already say X.Y.Z.
+# - Tag `vX.Y.Z-rc.N` (any prerelease) publishes under the `next` dist-tag,
+#   so `npm install lip-sync-engine` keeps getting the last stable release.
+#   package.json may say X.Y.Z; the prerelease version is applied in CI only.
+# - Manual run (Actions tab, "Run workflow"): builds, tests and runs
+#   `npm publish --dry-run`. Untick "dry run" to publish package.json's
+#   version for real.
 
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (build, test and pack, do not publish)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write # npm trusted publishing and provenance
 
 jobs:
   publish:
@@ -15,9 +38,34 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Use npm 11.5.1 or later (required for trusted publishing)
+        run: npm install -g npm@^11.5.1
+
+      - name: Resolve version and dist-tag
+        id: version
+        run: |
+          pkg=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$pkg"
+          fi
+          base="${version%%-*}"
+          if [ "$version" != "$pkg" ]; then
+            if [ "$version" = "$base" ] || [ "$base" != "$pkg" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $pkg"
+              exit 1
+            fi
+            npm version "$version" --no-git-tag-version
+          fi
+          if [ "$version" = "$base" ]; then dist_tag=latest; else dist_tag=next; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "dist_tag=$dist_tag" >> "$GITHUB_OUTPUT"
+          echo "Publishing $version under the '$dist_tag' dist-tag"
 
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
@@ -36,7 +84,16 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
-      - name: Publish to NPM
-        run: npm publish --access public
+      - name: Test
+        run: npm test
+
+      # --ignore-scripts: the package was built above, so skip prepublishOnly's
+      # second clean build.
+      - name: Publish to npm
+        run: |
+          flags="--access public --tag $DIST_TAG --ignore-scripts"
+          if [ "$DRY_RUN" = "true" ]; then flags="$flags --dry-run"; fi
+          npm publish $flags
         env:
-          NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
+          DIST_TAG: ${{ steps.version.outputs.dist_tag }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}

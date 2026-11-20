@@ -12,6 +12,7 @@
 
 extern "C" {
 #include <state_align_search.h>
+#include <sphinxbase/genrand.h>
 }
 
 using std::runtime_error;
@@ -115,14 +116,26 @@ lambda_unique_ptr<ngram_model_t> createBiasedLanguageModel(
 	return result;
 }
 
+// Without dialog text, use the dictionary subset whose words are in the
+// language model (scripts/filter-dict.py). The decoder cannot output other
+// words anyway, and parsing ~55k fewer entries makes start-up faster.
+static path dictionaryPath(const optional<std::string>& dialog) {
+	if (!dialog) {
+		path filtered = getSphinxModelDirectory() / "cmudict-en-us.lm-vocab.dict";
+		if (std::filesystem::exists(filtered)) return filtered;
+	}
+	return getSphinxModelDirectory() / "cmudict-en-us.dict";
+}
+
 static lambda_unique_ptr<ps_decoder_t> createDecoder(optional<std::string> dialog) {
+	const std::string dictPath = dictionaryPath(dialog).u8string();
 	lambda_unique_ptr<cmd_ln_t> config(
 		cmd_ln_init(
 			nullptr, ps_args(), true,
 			// Set acoustic model
 			"-hmm", (getSphinxModelDirectory() / "acoustic-model").u8string().c_str(),
 			// Set pronunciation dictionary
-			"-dict", (getSphinxModelDirectory() / "cmudict-en-us.dict").u8string().c_str(),
+			"-dict", dictPath.c_str(),
 			// Add noise against zero silence
 			// (see http://cmusphinx.sourceforge.net/wiki/faq#qwhy_my_accuracy_is_poor)
 			"-dither", "yes",
@@ -282,7 +295,8 @@ static Timeline<Phone> utteranceToPhones(
 		if (word == "<s>" || word == "</s>" || word == "<sil>") {
 			continue;
 		}
-		word = regex_replace(word, regex("\\(\\d\\)"), "");
+		static const regex alternateSuffix("\\(\\d\\)");
+		word = regex_replace(word, alternateSuffix, "");
 		if (!text.empty()) {
 			text += " ";
 		}
@@ -330,6 +344,67 @@ static Timeline<Phone> utteranceToPhones(
 	return utterancePhones;
 }
 
+// Building a decoder loads the acoustic model, the 134k-word dictionary and the
+// 26 MB language model. Upstream Rhubarb does that once per file; this WASM
+// build is called once per short streaming chunk, so we keep decoders alive
+// across calls instead of rebuilding them every time.
+// One decoder is kept for calls without dialog text and one for the most
+// recent dialog text (dialog decoders get dialog-specific words and LM).
+namespace {
+	struct DecoderCache {
+		std::shared_ptr<ps_decoder_t> noDialog;
+		std::shared_ptr<ps_decoder_t> withDialog;
+		std::string dialogText;
+		std::mutex mutex;
+	};
+
+	DecoderCache& decoderCache() {
+		static DecoderCache cache;
+		return cache;
+	}
+
+	std::shared_ptr<ps_decoder_t> toShared(lambda_unique_ptr<ps_decoder_t> decoder) {
+		return std::shared_ptr<ps_decoder_t>(decoder.release(), [](ps_decoder_t* d) { ps_free(d); });
+	}
+}
+
+static lambda_unique_ptr<ps_decoder_t> acquireCachedDecoder(optional<std::string> dialog) {
+	DecoderCache& cache = decoderCache();
+	std::shared_ptr<ps_decoder_t> decoder;
+	{
+		std::lock_guard<std::mutex> lock(cache.mutex);
+		if (!dialog) {
+			if (!cache.noDialog) cache.noDialog = toShared(createDecoder(boost::none));
+			decoder = cache.noDialog;
+		} else {
+			if (!cache.withDialog || cache.dialogText != *dialog) {
+				cache.withDialog.reset();
+				cache.withDialog = toShared(createDecoder(dialog));
+				cache.dialogText = *dialog;
+			}
+			decoder = cache.withDialog;
+		}
+	}
+	// A fresh decoder seeds the dither generator; re-seed so that a reused
+	// decoder produces exactly the same output as a freshly created one.
+	s3_rand_seed(cmd_ln_int32_r(decoder->config, "-seed"));
+	// Non-owning handle; the cache keeps the decoder alive.
+	return lambda_unique_ptr<ps_decoder_t>(decoder.get(), [decoder](ps_decoder_t*) {});
+}
+
+void prewarmPocketSphinxDecoder() {
+	redirectPocketSphinxOutput();
+	acquireCachedDecoder(boost::none);
+}
+
+void releasePocketSphinxDecoders() {
+	DecoderCache& cache = decoderCache();
+	std::lock_guard<std::mutex> lock(cache.mutex);
+	cache.noDialog.reset();
+	cache.withDialog.reset();
+	cache.dialogText.clear();
+}
+
 BoundedTimeline<Phone> PocketSphinxRecognizer::recognizePhones(
 	const AudioClip& inputAudioClip,
 	optional<std::string> dialog,
@@ -337,5 +412,5 @@ BoundedTimeline<Phone> PocketSphinxRecognizer::recognizePhones(
 	ProgressSink& progressSink
 ) const {
 	return ::recognizePhones(
-		inputAudioClip, dialog, &createDecoder, &utteranceToPhones, maxThreadCount, progressSink);
+		inputAudioClip, dialog, &acquireCachedDecoder, &utteranceToPhones, maxThreadCount, progressSink);
 }

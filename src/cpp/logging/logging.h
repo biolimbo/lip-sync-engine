@@ -14,8 +14,15 @@ namespace logging {
 
 	void log(Level level, const std::string& message);
 
+	// Messages below this level are dropped before they are formatted.
+	// Default Trace (everything). The WASM bridge sets Info, matching its sink.
+	void setMinLevel(Level level);
+
+	bool isEnabled(Level level);
+
 	template<typename... Args>
 	void logFormat(Level level, fmt::CStringRef format, const Args&... args) {
+		if (!isEnabled(level)) return;
 		log(level, fmt::format(format, args...));
 	}
 

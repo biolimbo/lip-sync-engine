@@ -1,0 +1,238 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>lip-sync-engine bench</title></head>
+<body>
+<script type="module">
+// Benchmark page. Driven by bench/run.mjs through Playwright.
+// Every function returns plain JSON so the runner can store it.
+
+let lib = null;
+let variant = null;
+
+async function load(v) {
+  variant = v;
+  lib = await import(`/v/${v}/index.mjs`);
+}
+
+function paths() {
+  const base = `${location.origin}/v/${variant}`;
+  return {
+    wasmPath: `${base}/wasm/lip-sync-engine.wasm`,
+    dataPath: `${base}/wasm/lip-sync-engine.data`,
+    jsPath: `${base}/wasm/lip-sync-engine.js`,
+    workerScriptUrl: `${base}/worker.js`,
+  };
+}
+
+async function pcm(name) {
+  const r = await fetch(`/audio/${name}`);
+  return new Int16Array(await r.arrayBuffer());
+}
+
+// Copied from Librarium lipSyncManager.resample24to16 (linear interpolation)
+function resample24to16(input) {
+  const ratio = 24000 / 16000;
+  const outputLength = Math.floor(input.length / ratio);
+  const output = new Int16Array(outputLength);
+  for (let i = 0; i < outputLength; i++) {
+    const sourceIndex = i * ratio;
+    const index = Math.floor(sourceIndex);
+    const fraction = sourceIndex - index;
+    if (index + 1 < input.length) {
+      output[i] = Math.round(input[index] * (1 - fraction) + input[index + 1] * fraction);
+    } else {
+      output[i] = input[index];
+    }
+  }
+  return output;
+}
+
+function chunk24(x24, chunkMs) {
+  const n = Math.round(24 * chunkMs);
+  const out = [];
+  for (let i = 0; i < x24.length; i += n) out.push(resample24to16(x24.subarray(i, i + n)));
+  return out;
+}
+
+let pool = null;
+let extra = {}; // extra analyze options for every call (e.g. extendedShapes)
+
+async function createPool(workers, extra = {}) {
+  const { WorkerPool } = lib;
+  const p = paths();
+  pool = WorkerPool.getInstance(workers, p.workerScriptUrl);
+  const t0 = performance.now();
+  await pool.init({ ...p, ...extra });
+  const t1 = performance.now();
+  await pool.warmup();
+  const t2 = performance.now();
+  return { initMs: t1 - t0, warmupMs: t2 - t1 };
+}
+
+function destroyPool() {
+  if (pool) pool.destroy();
+  pool = null;
+}
+
+function stats(xs) {
+  const s = [...xs].sort((a, b) => a - b);
+  const q = (p) => s[Math.min(s.length - 1, Math.floor(p * s.length))];
+  return { n: s.length, mean: s.reduce((a, b) => a + b, 0) / s.length, p50: q(0.5), p95: q(0.95), max: s[s.length - 1] };
+}
+
+const B = {
+  load,
+  setExtra(o) { extra = o || {}; },
+  createPool,
+  destroyPool,
+  // One analysis of 1 s of real speech, results discarded
+  async warmCall() {
+    const x16 = await pcm('slt4.16k.pcm');
+    await pool.analyze(x16.subarray(16000, 32000), { sampleRate: 16000, ...extra });
+  },
+  async memStats() {
+    return pool && pool.getMemoryStats ? pool.getMemoryStats() : null;
+  },
+
+  // Librarium flow for one answer: fresh pool (init + warmup), then the first
+  // chunk is analysed on its own. Returns init, warmup and first-chunk times.
+  async freshAnswer({ name, chunkMs, workers, poolOptions = {}, streamOptions = null }) {
+    const x24 = await pcm(`${name}.24k.pcm`);
+    const chunks = chunk24(x24, chunkMs);
+    const t = await createPool(workers, poolOptions);
+    const t0 = performance.now();
+    if (streamOptions) {
+      const s = pool.createStreamAnalyzer({ sampleRate: 16000, ...extra, ...streamOptions });
+      const i = s.addChunk(chunks[0]);
+      await s.getResult(i);
+    } else {
+      await pool.analyze(chunks[0], { sampleRate: 16000, ...extra });
+    }
+    const firstChunkMs = performance.now() - t0;
+    destroyPool();
+    return { ...t, firstChunkMs, firstChunkAudioMs: (chunks[0].length / 16) };
+  },
+
+  // Analyse every chunk one at a time on a warm pool. Measures pure per-chunk
+  // analysis time and returns the cues (offset to answer time) for quality.
+  async sequential({ name, chunkMs, streamOptions = null }) {
+    const x24 = await pcm(`${name}.24k.pcm`);
+    const chunks = chunk24(x24, chunkMs);
+    const times = [];
+    const cues = [];
+    let offset = 0;
+    const s = streamOptions ? pool.createStreamAnalyzer({ sampleRate: 16000, ...extra, ...streamOptions }) : null;
+    for (const c of chunks) {
+      const t0 = performance.now();
+      let r;
+      if (s) {
+        const i = s.addChunk(c);
+        r = await s.getResult(i);
+      } else {
+        r = await pool.analyze(c, { sampleRate: 16000, ...extra });
+      }
+      times.push(performance.now() - t0);
+      for (const m of r.mouthCues) cues.push({ start: m.start + offset, end: m.end + offset, value: m.value });
+      offset += c.length / 16000;
+    }
+    return { times, cues, audioSeconds: offset, chunkCount: chunks.length };
+  },
+
+  // All chunks of an answer arrive at the given pace (paceFactor = audio
+  // seconds delivered per wall second; Infinity = burst). The player starts
+  // once chunk 0 is ready and then needs chunk i at start + sum(durations<i).
+  async streaming({ name, chunkMs, paceFactor = Infinity, streamOptions = null }) {
+    const x24 = await pcm(`${name}.24k.pcm`);
+    const chunks = chunk24(x24, chunkMs);
+    const s = streamOptions ? pool.createStreamAnalyzer({ sampleRate: 16000, ...extra, ...streamOptions }) : null;
+    const start = performance.now();
+    const ready = new Array(chunks.length);
+    const arrive = new Array(chunks.length);
+    const promises = [];
+    const cues = [];
+    let audioT = 0;
+    for (let i = 0; i < chunks.length; i++) {
+      const due = start + (audioT / paceFactor) * 1000;
+      const wait = due - performance.now();
+      if (Number.isFinite(wait) && wait > 0) await new Promise((r) => setTimeout(r, wait));
+      arrive[i] = performance.now();
+      const p = s ? s.getResult(s.addChunk(chunks[i])) : pool.analyze(chunks[i], { sampleRate: 16000, ...extra });
+      const offset = audioT;
+      promises.push(p.then((r) => {
+        ready[i] = performance.now();
+        for (const m of r.mouthCues) cues.push({ start: m.start + offset, end: m.end + offset, value: m.value });
+      }));
+      audioT += chunks[i].length / 16000;
+    }
+    if (s && s.end) s.end(); // the app knows when the answer's audio is complete
+    await Promise.all(promises);
+    cues.sort((a, b) => a.start - b.start);
+    const latencies = ready.map((r, i) => r - arrive[i]);
+    // playback simulation
+    let playAt = ready[0];
+    let stallMs = 0;
+    for (let i = 0; i < chunks.length; i++) {
+      if (ready[i] > playAt) { stallMs += ready[i] - playAt; playAt = ready[i]; }
+      playAt += (chunks[i].length / 16000) * 1000;
+    }
+    return { firstAudioMs: ready[0] - arrive[0], stallMs, latency: stats(latencies), chunkCount: chunks.length, cues, audioSeconds: audioT };
+  },
+
+  // Experiment: analyse [ctx + chunk + lookahead] windows directly and crop.
+  async windowed({ name, chunkMs, ctxMs, lookMs }) {
+    const x24 = await pcm(`${name}.24k.pcm`);
+    const chunks = chunk24(x24, chunkMs);
+    let all = new Int16Array(chunks.reduce((a, c) => a + c.length, 0));
+    let o = 0; const starts = [];
+    for (const c of chunks) { starts.push(o); all.set(c, o); o += c.length; }
+    const cues = [];
+    const ctx = ctxMs * 16, look = lookMs * 16;
+    const results = await Promise.all(chunks.map((c, i) => {
+      const a = Math.max(0, starts[i] - ctx), b = Math.min(all.length, starts[i] + c.length + look);
+      return pool.analyze(all.subarray(a, b), { sampleRate: 16000, ...extra }).then(r => ({ r, off: (starts[i] - a) / 16000, dur: c.length / 16000, t0: starts[i] / 16000 }));
+    }));
+    for (const { r, off, dur, t0 } of results) {
+      for (const m of r.mouthCues) {
+        const s0 = Math.max(0, m.start - off), e0 = Math.min(dur, m.end - off);
+        if (e0 - s0 > 1e-6) cues.push({ start: s0 + t0, end: e0 + t0, value: m.value });
+      }
+    }
+    return cues;
+  },
+
+  // Repeated calls on one worker: how many succeed, and heap growth.
+  async leak(maxCalls) {
+    const x24 = await pcm('slt1.24k.pcm');
+    const chunks = chunk24(x24, 100);
+    const heap = [];
+    const t0 = performance.now();
+    for (let i = 0; i < maxCalls; i++) {
+      try {
+        await pool.analyze(chunks[i % chunks.length], { sampleRate: 16000, ...extra });
+      } catch (e) {
+        return { ok: i, failedAt: i, error: String(e && e.message), seconds: (performance.now() - t0) / 1000, heap };
+      }
+      if (i % 100 === 0 && pool.getMemoryStats) heap.push(Math.round((await pool.getMemoryStats()).workers[0] / 2 ** 20));
+    }
+    return { ok: maxCalls, seconds: (performance.now() - t0) / 1000, heap };
+  },
+
+  // Whole answer in one call with the transcript: the quality reference.
+  async reference({ name, text }) {
+    const x16 = await pcm(`${name}.16k.pcm`);
+    const r = await pool.analyze(x16, { sampleRate: 16000, ...extra, dialogText: text });
+    return r.mouthCues;
+  },
+
+  async whole({ name }) {
+    const x16 = await pcm(`${name}.16k.pcm`);
+    const r = await pool.analyze(x16, { sampleRate: 16000, ...extra });
+    return r.mouthCues;
+  },
+};
+
+window.B = B;
+window.benchReady = true;
+</script>
+</body>
+</html>

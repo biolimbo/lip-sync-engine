@@ -15,19 +15,21 @@ The `StreamAnalyzerController` allows you to:
 ```typescript
 import { WorkerPool } from 'lip-sync-engine';
 
-const pool = WorkerPool.getInstance(4); // 4 workers
+const pool = WorkerPool.getInstance(2); // one or two workers keep up with real-time speech
 await pool.init({ /* paths */ });
 await pool.warmup(); // Pre-create all workers
 
 const stream = pool.createStreamAnalyzer({
-  dialogText: "Expected dialog text",
-  sampleRate: 16000
+  sampleRate: 16000,
+  contextMs: 500,   // earlier audio analysed with each chunk
+  lookaheadMs: 500  // later audio, waited for only while playback allows
 });
 
 // Add chunks as they arrive
 for await (const chunk of audioStream) {
   stream.addChunk(chunk); // Non-blocking, returns immediately
 }
+stream.end(); // no more audio
 
 // Get all results in order
 const results = await stream.finalize();
@@ -40,7 +42,7 @@ const results = await stream.finalize();
 Creates a new streaming analyzer controller.
 
 **Parameters:**
-- `options` - `LipSyncEngineOptions` - Configuration applied to all chunks
+- `options` - `StreamAnalyzerOptions` - `LipSyncEngineOptions` applied to all chunks, plus the 2.0.0 windowing options (`contextMs`, `lookaheadMs`, ...). See the API reference.
 
 **Returns:** `StreamAnalyzerController`
 
@@ -58,6 +60,14 @@ Queues a chunk for analysis. Returns immediately without blocking.
 const index = stream.addChunk(audioChunk);
 console.log(`Queued chunk ${index}`);
 ```
+
+### `StreamAnalyzerController.getResult(index)`
+
+Promise for one chunk's result (2.0.0). Times are relative to the chunk start.
+
+### `StreamAnalyzerController.end()`
+
+No more chunks will be added (2.0.0). Chunks still waiting for lookahead are analysed straight away.
 
 ### `StreamAnalyzerController.finalize()`
 
@@ -113,6 +123,7 @@ Perfect for event-based APIs:
 ```typescript
 const stream = pool.createStreamAnalyzer({ sampleRate: 16000 });
 
+ws.binaryType = 'arraybuffer'; // messages arrive as Blob otherwise
 ws.addEventListener('message', (event) => {
   const chunk = new Int16Array(event.data);
   stream.addChunk(chunk);
@@ -166,55 +177,49 @@ const results = await stream.finalize();
 
 ## Performance Best Practices
 
-### 1. Pre-warm the Worker Pool
+Numbers below come from `BENCHMARK.md` (real speech, headless Chromium).
 
-Create all workers upfront to avoid initialization overhead:
+### 1. Create the pool once and keep it
+
+Since 2.0.0 each worker builds its speech decoder once (about 0.5 s of CPU) and reuses it. Destroying and re-creating the pool for every utterance pays that cost again before the first chunk.
 
 ```typescript
-const pool = WorkerPool.getInstance(4);
+const pool = WorkerPool.getInstance(2);
 await pool.init({ /* paths */ });
-await pool.warmup(); // Creates all 4 workers immediately
-
-const stream = pool.createStreamAnalyzer({ /* options */ });
+await pool.warmup();
+// ...use it for every utterance; call pool.destroy() only when done for good
 ```
 
-### 2. Choose Optimal Worker Count
+### 2. Use few workers
 
-Match worker count to your CPU cores and workload:
+A warm worker analyses a 250 ms chunk in about 70 to 100 ms (median), so one or two workers keep up with real-time speech. Each worker costs about 115 MB, so more workers mostly cost memory, which matters most on tablets and kiosks.
+
+### 3. Give chunks context and lookahead
+
+Chunks analysed on their own lose most mouth shapes: on short streaming chunks only 37 to 68% of frames match a whole-utterance analysis, and the mouth often snaps shut at chunk boundaries. Let the controller analyse each chunk inside a window of surrounding audio:
 
 ```typescript
-// Auto-detect CPU cores
-const pool = WorkerPool.getInstance(navigator.hardwareConcurrency);
+const stream = pool.createStreamAnalyzer({
+  sampleRate: 16000,
+  contextMs: 500,    // earlier audio
+  lookaheadMs: 500,  // later audio, waited for only while playback allows
+});
 
-// Or set explicitly
-const pool = WorkerPool.getInstance(4); // 4 workers
+const index = stream.addChunk(chunk);
+const result = await stream.getResult(index); // cues for this chunk only
+
+// when the utterance's audio is complete
+stream.end();
 ```
 
-### 3. Chunk Size Matters
+With this, 82 to 90% of frames match. The first chunk is still analysed immediately, and waiting for lookahead stops early enough for each chunk's cues to be ready before it plays (assuming playback starts when the first result returns).
 
-Optimal chunk size balances throughput and latency:
-
-```typescript
-// Too small: High overhead from worker communication
-const tooSmall = new Int16Array(1000); // ~60ms at 16kHz
-
-// Optimal: 1-3 seconds of audio
-const optimal = new Int16Array(16000 * 2); // 2 seconds at 16kHz
-
-// Too large: Reduces parallelism potential
-const tooLarge = new Int16Array(16000 * 30); // 30 seconds
-```
-
-### 4. Monitor Queue Depth
-
-Check if workers are keeping up with incoming chunks:
+### 4. Monitor queue depth
 
 ```typescript
-stream.addChunk(chunk);
-
 const stats = stream.getStats();
 if (stats.poolStats.queuedJobs > 10) {
-  console.warn('Queue is backing up - consider more workers');
+  console.warn('Queue is backing up');
 }
 ```
 
@@ -260,8 +265,8 @@ const completed: LipSyncEngineResult[] = [];
 for await (const chunk of audioStream) {
   const index = stream.addChunk(chunk);
 
-  // Get result as soon as THIS chunk completes (optional)
-  pool.analyze(chunk, { sampleRate: 16000 }).then(result => {
+  // Get result as soon as THIS chunk completes (times relative to the chunk start)
+  stream.getResult(index).then(result => {
     console.log(`Chunk ${index} completed:`, result.mouthCues);
     completed.push(result);
   });
@@ -287,7 +292,7 @@ try {
 }
 ```
 
-**Note:** If any chunk fails, `finalize()` will reject with that error. Individual chunk errors don't affect other chunks in the queue.
+**Note:** If any chunk fails, `finalize()` will reject with that error. Without `contextMs`/`lookaheadMs`, a failed chunk does not affect the others. With them, chunks analysed in the same batch fail together.
 
 ## Complete Example
 
@@ -295,8 +300,8 @@ try {
 import { WorkerPool } from 'lip-sync-engine';
 
 async function processLiveAudio() {
-  // 1. Initialize pool
-  const pool = WorkerPool.getInstance(4);
+  // 1. Initialize pool (create it once and reuse it for every stream)
+  const pool = WorkerPool.getInstance(2);
   await pool.init({
     wasmPath: '/dist/wasm/lip-sync-engine.wasm',
     dataPath: '/dist/wasm/lip-sync-engine.data',
@@ -309,12 +314,14 @@ async function processLiveAudio() {
 
   // 3. Create streaming analyzer
   const stream = pool.createStreamAnalyzer({
-    dialogText: "Expected dialog",
-    sampleRate: 16000
+    sampleRate: 16000,
+    contextMs: 500,
+    lookaheadMs: 500
   });
 
   // 4. Process chunks as they arrive
   const ws = new WebSocket('wss://audio-stream.example.com');
+  ws.binaryType = 'arraybuffer'; // messages arrive as Blob otherwise
 
   ws.addEventListener('message', (event) => {
     const chunk = new Int16Array(event.data);
@@ -330,11 +337,10 @@ async function processLiveAudio() {
     const results = await stream.finalize();
     console.log(`Analyzed ${results.length} chunks`);
 
-    // Combine all mouth cues
-    const allMouthCues = results.flatMap(r => r.mouthCues);
-    console.log('Total mouth cues:', allMouthCues.length);
+    // Each result's cue times are relative to its chunk start
+    console.log('Mouth cues per chunk:', results.map(r => r.mouthCues.length));
 
-    pool.destroy();
+    // Keep the pool for the next stream; call pool.destroy() only when done for good
   });
 }
 ```

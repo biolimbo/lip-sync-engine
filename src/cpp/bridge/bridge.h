@@ -16,6 +16,33 @@ extern "C" {
 int lipsyncengine_init(const char* models_path);
 
 /**
+ * Build the speech decoder (acoustic model, dictionary, language model) now,
+ * so the first analysis does not pay for it. Optional; analysis builds it
+ * lazily otherwise. Call after lipsyncengine_init().
+ *
+ * @return 0 on success, non-zero on error
+ */
+int lipsyncengine_prewarm();
+
+/**
+ * Choose the recognizer. 0 = PocketSphinx word recognition (default).
+ * 1 = phonetic recognition: no word language model or dictionary, faster
+ * start-up and less memory; dialog text is ignored.
+ *
+ * @return 0 on success, non-zero on error
+ */
+int lipsyncengine_set_recognizer(int kind);
+
+/**
+ * Use Rhubarb's extended mouth shapes in addition to A-F: any combination of
+ * "G" (F/V), "H" (L) and "X" (idle). Default "GHX" (all nine shapes).
+ * NULL or "" = basic shapes A-F only, as in 1.x.
+ *
+ * @return 0 on success, non-zero on error
+ */
+int lipsyncengine_set_extended_shapes(const char* shapes);
+
+/**
  * Analyze PCM16 audio data and generate lip-sync-engine animation as JSON.
  *
  * @param pcm16 Pointer to PCM16 audio data (int16_t array)

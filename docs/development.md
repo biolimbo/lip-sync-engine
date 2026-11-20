@@ -5,8 +5,13 @@ Guide for developing and testing LipSyncEngine.js locally.
 ## Prerequisites
 
 - Node.js 18+ and npm
-- Emscripten SDK (for building WASM)
-- CMake
+- Emscripten SDK, activated in your shell (`source ./emsdk_env.sh`) so `emcmake` and `emmake` are on PATH
+- CMake 3.13 or newer
+- Python 3 (only to regenerate the filtered dictionary, see Models below)
+
+### Models
+
+`models/sphinx/` (acoustic-model/, cmudict-en-us.dict, cmudict-en-us.lm-vocab.dict, en-us.lm.bin, en-us-phone.lm.bin) is packaged into `lip-sync-engine.data`. After changing `en-us.lm.bin` or `cmudict-en-us.dict`, run `python3 scripts/filter-dict.py models/sphinx` to regenerate `cmudict-en-us.lm-vocab.dict` (the dictionary used when there is no dialog text; the engine falls back to the full dictionary if it is missing).
 
 ## Initial Setup
 
@@ -76,7 +81,7 @@ npm run dev  # Changes are immediately available
 
 ### 3. Working with Examples
 
-The examples are already configured to use the local package via `"file:../.."`
+The examples depend on the published `lip-sync-engine@^2.0.0`. To use your local build instead, run `npm link` in the project root, then `npm install && npm link lip-sync-engine` in the example (or `npm install --no-save ../..`).
 
 ```bash
 # From project root
@@ -106,8 +111,8 @@ After making changes:
 # 1. Rebuild the package
 npm run build
 
-# 2. Examples will automatically pick up changes
-# Just refresh your browser (or restart dev server if needed)
+# 2. Linked examples pick up the rebuilt dist/
+# Restart the dev server if Vite cached the old build
 ```
 
 ## Project Structure
@@ -121,7 +126,12 @@ lip-sync-engine/
 │   ├── wasm/         # WASM artifacts
 │   ├── index.js      # CJS bundle
 │   ├── index.mjs     # ESM bundle
-│   └── index.d.ts    # TypeScript definitions
+│   ├── index.d.ts    # TypeScript definitions
+│   └── worker.js     # Web Worker bundle
+├── lib/               # Vendored C/C++ dependencies (PocketSphinx, WebRTC VAD, ...)
+├── models/sphinx/     # Speech models packaged into the .data file
+├── test/              # Vitest unit tests
+├── bench/             # Benchmarks (see BENCHMARK.md)
 ├── examples/          # Framework examples
 ├── docs/              # Documentation
 └── scripts/           # Build scripts
@@ -134,12 +144,12 @@ lip-sync-engine/
 1. Runs CMake with Emscripten
 2. Compiles C++ to WebAssembly
 3. Outputs to `dist/wasm/`
-4. Renames files from `lipsyncengine-wasm.*` to `lip-sync-engine.*`
+4. Packages `models/sphinx` into `lip-sync-engine.data` (mounted at `/wasm/res/sphinx`)
 
 ### Build TypeScript (`npm run build:ts`)
 
 1. Runs tsup bundler
-2. Creates CJS, ESM, and type definitions
+2. Creates CJS, ESM, type definitions and the `dist/worker.js` worker bundle
 3. Outputs to `dist/`
 
 ## Common Development Tasks
@@ -162,10 +172,11 @@ lip-sync-engine/
    }
    ```
 
-3. **Export**:
+3. **Export**: methods on `LipSyncEngine`/`WorkerPool` need no extra export. For a new standalone function or type, export it from `src/ts/index.ts`:
    ```typescript
    // src/ts/index.ts
-   export { newFeature } from './LipSyncEngine';
+   export { newFeature } from './yourModule';
+   export type { NewFeatureOptions } from './types';
    ```
 
 4. **Build and Test**:
@@ -195,11 +206,20 @@ cd build
 emcmake cmake .. -DCMAKE_BUILD_TYPE=Debug
 emmake make
 
-# Check WASM output
-wasm-objdump -x dist/wasm/lip-sync-engine.wasm
+# Check WASM output (CMake writes to <root>/dist/wasm)
+wasm-objdump -x ../dist/wasm/lip-sync-engine.wasm
 ```
 
 ## Testing Workflow
+
+### Automated Tests
+
+```bash
+npm test            # Vitest unit tests (test/), no WASM build needed
+npm run typecheck   # type-checks src/ts and test/
+```
+
+CI runs both on every push and pull request to main, and the publish workflow runs them again before publishing. Browser benchmarks and quality checks live in `bench/` (see `BENCHMARK.md`).
 
 ### Manual Testing
 
@@ -231,27 +251,31 @@ await analyze(pcm16, { sampleRate: 44100 });
 
 ### Pre-publish Checklist
 
-- [ ] All tests passing
+- [ ] `npm test` and `npm run typecheck` pass
 - [ ] Documentation updated
-- [ ] CHANGELOG updated
 - [ ] Version bumped in package.json
 
 ### Publishing Steps
 
+Releases are published by GitHub Actions (`.github/workflows/publish.yml`) with npm trusted publishing, so no npm token is stored in the repository. The package's trusted publisher on npmjs.com names this repository and the workflow file `publish.yml`.
+
 ```bash
-# 1. Build everything
+# 1. Optional: check the package contents
 npm run build
+npm pack --dry-run
 
-# 2. Test the build
-npm pack
-npm install ./lip-sync-engine-1.0.0.tgz
+# 2. Optional: release candidate under the `next` dist-tag.
+#    package.json can stay at 2.0.0; CI applies the rc version.
+git tag v2.0.0-rc.0
+git push origin v2.0.0-rc.0
+# test it: npm install lip-sync-engine@next
 
-# 3. Create git tag
-git tag v1.0.0
-git push origin v1.0.0
-
-# 4. GitHub Actions will automatically publish to NPM
+# 3. Stable release under `latest` (package.json must say 2.0.0)
+git tag v2.0.0
+git push origin v2.0.0
 ```
+
+A tag whose version does not match package.json fails before anything is published. To check the workflow without publishing, run it from the Actions tab ("Run workflow") with "dry run" ticked.
 
 ## Troubleshooting
 
@@ -285,8 +309,7 @@ curl http://localhost:3000/dist/wasm/lip-sync-engine.wasm
 ```bash
 npm run build:ts
 cd examples/react
-rm -rf node_modules/lip-sync-engine
-npm install
+npm link lip-sync-engine
 ```
 
 ## Tips

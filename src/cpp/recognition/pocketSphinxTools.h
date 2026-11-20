@@ -30,6 +30,9 @@ BoundedTimeline<Phone> recognizePhones(
 	ProgressSink& progressSink
 );
 
+// Routes PocketSphinx log output through our logging (idempotent).
+void redirectPocketSphinxOutput();
+
 constexpr int sphinxSampleRate = 16000;
 
 const std::filesystem::path& getSphinxModelDirectory();

@@ -5,6 +5,7 @@ import type {
   WasmLoaderOptions,
 } from './types';
 import { WasmLoader } from './WasmLoader';
+import { applyExtendedShapes } from './extendedShapes';
 
 /**
  * Main API class for Lip Sync
@@ -140,6 +141,8 @@ export class LipSyncEngine {
       throw new Error('sampleRate must be positive');
     }
 
+    applyExtendedShapes(this.module, options.extendedShapes);
+
     let pcm16Ptr = 0;
     let dialogPtr = 0;
     let resultPtr = 0;
@@ -208,6 +211,9 @@ export class LipSyncEngine {
     // Lazy load WorkerPool to avoid circular dependencies
     const { WorkerPool } = await import('./WorkerPool');
     const pool = WorkerPool.getInstance();
+    // Start the shared pool if the app has not (returns at once when running).
+    // Uses the pool's own paths (CDN defaults unless WorkerPool.init() set them).
+    await pool.init();
     return pool.analyze(pcm16, options);
   }
 
