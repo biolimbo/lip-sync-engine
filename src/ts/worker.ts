@@ -35,6 +35,8 @@ export interface WorkerInitRequest {
   wasmModule?: WebAssembly.Module;
   /** .data contents shared by the pool (optional) */
   dataBuffer?: ArrayBuffer;
+  /** Compile the .wasm here and send the module back in the ready message */
+  returnModule?: boolean;
 }
 
 export interface WorkerInitResponse {
@@ -42,6 +44,8 @@ export interface WorkerInitResponse {
   error?: string;
   /** True when the speech decoder is already built */
   warm?: boolean;
+  /** Compiled module, when the pool asked for it (returnModule) */
+  wasmModule?: WebAssembly.Module;
 }
 
 export interface WorkerStatsRequest {
@@ -66,17 +70,32 @@ let modelsPath = '/models';
 /**
  * Initialize WASM module in worker context
  */
-async function initializeWorker(message: WorkerInitRequest): Promise<boolean> {
+/** Compile the .wasm in this worker so the module can be shared */
+async function compileModule(wasmPath: string): Promise<WebAssembly.Module | undefined> {
+  try {
+    return typeof WebAssembly.compileStreaming === 'function'
+      ? await WebAssembly.compileStreaming(fetch(wasmPath))
+      : await WebAssembly.compile(await (await fetch(wasmPath)).arrayBuffer());
+  } catch {
+    return undefined; // fall back to Emscripten's own loading
+  }
+}
+
+async function initializeWorker(
+  message: WorkerInitRequest
+): Promise<{ warm: boolean; compiled?: WebAssembly.Module }> {
   const { wasmPath, dataPath, jsPath } = message;
   const prewarm = message.prewarm !== false;
   try {
+    const compiled = message.wasmModule ?? (message.returnModule ? await compileModule(wasmPath) : undefined);
     wasmModule = await WasmLoader.loadModule({
       wasmPath,
       dataPath,
       jsPath,
-      wasmModule: message.wasmModule,
+      wasmModule: compiled,
       dataBuffer: message.dataBuffer
     });
+    const sendBack = message.returnModule ? compiled : undefined;
 
     // Initialize the engine
     const modelsPathPtr = wasmModule._malloc(modelsPath.length + 1);
@@ -105,9 +124,9 @@ async function initializeWorker(message: WorkerInitRequest): Promise<boolean> {
         const errorPtr = wasmModule._lipsyncengine_get_last_error();
         throw new Error(errorPtr ? wasmModule.UTF8ToString(errorPtr) : 'Unknown prewarm error');
       }
-      return true;
+      return { warm: true, compiled: sendBack };
     }
-    return false;
+    return { warm: false, compiled: sendBack };
   } catch (error) {
     throw new Error(`Worker initialization failed: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -180,8 +199,8 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
   if (message.type === 'init') {
     try {
-      const warm = await initializeWorker(message);
-      const response: WorkerInitResponse = { type: 'ready', warm };
+      const { warm, compiled } = await initializeWorker(message);
+      const response: WorkerInitResponse = { type: 'ready', warm, wasmModule: compiled };
       self.postMessage(response);
     } catch (error) {
       const response: WorkerInitResponse = {

@@ -1,7 +1,9 @@
 #include "pocketSphinxTools.h"
 
 #include "tools/platformTools.h"
+#include <exception>
 #include <regex>
+#include <stdexcept>
 #include "audio/DcOffset.h"
 #include "audio/voiceActivityDetection.h"
 #include "tools/parallel.h"

@@ -345,7 +345,7 @@ Other pool options (all optional):
 ```typescript
 await pool.init({
   prewarm: true,            // build each decoder during init()/warmup() (default). 'first': only the init() worker. false: on first job
-  shareAssets: true,        // compile the .wasm once and share the compiled module with workers (default)
+  shareAssets: true,        // compile the .wasm once (first worker) and reuse it for the others (default)
   recognizer: 'pocketsphinx' // default. 'phonetic' is cheaper but less accurate (see Streaming Quality)
 });
 

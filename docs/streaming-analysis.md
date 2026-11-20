@@ -87,7 +87,7 @@ Returns current streaming statistics.
 ```typescript
 {
   chunksAdded: number;        // Total chunks added
-  chunksCompleted: number;    // Chunks that finished processing
+  chunksCompleted: number;    // Chunks that finished processing (succeeded or failed)
   poolStats: {                // WorkerPool statistics
     totalWorkers: number;
     busyWorkers: number;

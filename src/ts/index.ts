@@ -1,7 +1,7 @@
 // Main exports
 export { LipSyncEngine, analyze, analyzeAsync } from './LipSyncEngine';
 export { WasmLoader } from './WasmLoader';
-export { WorkerPool, StreamAnalyzerController } from './WorkerPool';
+export { WorkerPool, StreamAnalyzerController, WorkerPoolDestroyedError } from './WorkerPool';
 export type { StreamAnalyzerOptions, PrewarmMode } from './WorkerPool';
 
 // Utilities
