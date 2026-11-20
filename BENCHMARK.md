@@ -140,6 +140,57 @@ Speed is unchanged. Agreement is slightly lower than with six shapes only becaus
 
 It is much cheaper but clearly worse, so it is only for devices that cannot keep up otherwise.
 
+## Head-to-head with other browser lip-sync libraries
+
+The quality numbers above use lip-sync-engine's own whole-answer output as the reference, which would favour it against other libraries. So this comparison uses independent ground truth: the hand-checked phone timings published with CMU ARCTIC, mapped through the same trimming and joining as the test answers (`bench/h2h/truth.py`).
+
+**Setup:**
+
+- **headaudio 1.1.0** and **wlipsync 1.3.1** were run offline in Node on the same 24 kHz answer audio, fed in AudioWorklet-sized blocks exactly as their worklets do (`bench/h2h/run-headaudio.mjs`, `bench/h2h/run-wlipsync.mjs`).
+  - headaudio's output is its worklet's viseme stream, after its own majority vote.
+  - wlipsync uses the example voice profile from its repository. It has no profile for these speakers, which puts it at a disadvantage; making one requires Unity.
+- **Common scale.** Each library uses a different set of mouth shapes, so the truth phones and every output are mapped to five mouth classes (`bench/h2h/score.mjs`):
+  - **closed:** silence, m, b, p
+  - **f/v:** teeth on lip
+  - **rounded:** uw, uh, ow, ao, w
+  - **wide open:** aa, ae, aw, ay
+  - **other:** all remaining sounds
+- **Scoring.** On a 10 ms grid, at each library's best constant time shift. Frame-by-frame analysers report slightly after the sound, and their docs suggest delaying the audio to compensate. wlipsync also got its best loudness threshold for "mouth closed".
+
+**Balanced accuracy** is the average of the five per-class hit rates, so the common "other" class does not dominate. Chance level is 20%.
+
+| Library and setup | Balanced accuracy | Frame accuracy | m/b/p shown closed | Vowel frames shown closed | Best shift | Balanced at 0 shift |
+|---|---|---|---|---|---|---|
+| lip-sync-engine 1.0.3, 250 ms chunks alone (Librarium today) | 33.0% | 46.6% | 90% | 29% | 0 ms | 33.0% |
+| lip-sync-engine 2.0.0, 250 ms chunks alone | 35.4% | 46.8% | 90% | 29% | 10 ms | 35.4% |
+| **lip-sync-engine 2.0.0, 250 ms chunks, context and lookahead** | **54.6%** | **68.0%** | **92%** | **4%** | -10 ms | **54.5%** |
+| lip-sync-engine 2.0.0, 1000 ms chunks, context and lookahead | 55.2% | 68.2% | 93% | 4% | -10 ms | 55.1% |
+| lip-sync-engine 2.0.0, whole answer in one call | 55.8% | 68.5% | 93% | 4% | 0 ms | 55.8% |
+| lip-sync-engine 2.0.0, whole answer with transcript | 57.9% | 68.9% | 98% | 4% | 0 ms | 57.9% |
+| headaudio 1.1.0 | 42.5% | 57.3% | 48% | 3% | 40 ms | 36.9% |
+| wlipsync 1.3.1 (example profile) | 42.1% | 39.5% | 47% | 2% | 30 ms | 39.1% |
+
+Hit rate per class (best shift):
+
+| Library and setup | closed | f/v | rounded | wide open | other |
+|---|---|---|---|---|---|
+| lip-sync-engine 1.0.3, chunks alone | 73% | 0% | 37% | 3% | 52% |
+| lip-sync-engine 2.0.0, context and lookahead (250 ms) | 51% | 57% | 70% | 15% | 80% |
+| headaudio | 48% | 29% | 45% | 24% | 67% |
+| wlipsync | 55% | 0% | 75% | 47% | 35% |
+
+What this shows:
+
+- **lip-sync-engine 2.0.0 with context and lookahead is the most accurate,** by about 12 points of balanced accuracy. It is within 1 to 3 points of analysing the whole answer at once.
+- **It shows the lips closing for about 92% of m, b and p sounds.** headaudio and wlipsync do so for under half.
+- **Librarium's current setup is the least accurate of all,** below both lightweight libraries: short chunks analysed alone with 1.0.3. The mouth closes on 29% of vowel frames, and it has no f/v shape.
+- **The lightweight libraries win in places.** wlipsync is better at wide-open vowels (47%) and rounded vowels (75%), and headaudio at wide-open vowels (24%). Rhubarb shows many wide vowels with its medium-open shape C, which counts as "other" here.
+- **Cost is the other side.** In Node on this machine, headaudio took 7 ms and wlipsync 9 ms of CPU per second of audio, against roughly 300 to 400 ms for lip-sync-engine. They also run with about 30 to 40 ms of delay and no start-up cost.
+- **Limits of this test.**
+  - Absolute numbers are modest because phone labels don't match visible mouth shapes exactly (neighbouring sounds blend), and five classes is a coarse scale. Use the numbers to compare libraries, not as absolute accuracy.
+  - wlipsync would likely improve with a profile made for these voices.
+  - Only two speakers of read speech were tested, not the text-to-speech voices Librarium uses.
+
 ## Recommendations for a streaming voice avatar (Librarium)
 
 1. **Create the pool once and keep it.** Stop destroying it after each answer. The first chunk of an answer then takes about 0.1 s instead of about 1.5 s. Destroying the pool was also hiding the 1.0.3 memory failure, which 2.0.0 no longer has.

@@ -253,7 +253,16 @@ For comparison, analysing the whole answer in one call without a transcript reac
 
 ## ⚖️ How It Compares to Other Browser Lip-Sync Libraries
 
-This comparison is based on reading each project's code and documentation. **We have not measured these libraries head-to-head.**
+We compared them on the same 116 s of read speech against independent ground truth (hand-checked phone timings from CMU ARCTIC), with each library's output and the truth mapped to five mouth classes (closed, f/v, rounded, wide open, other). Balanced accuracy is the average hit rate over those classes; chance is 20%. Details and caveats are in [BENCHMARK.md](./BENCHMARK.md#head-to-head-with-other-browser-lip-sync-libraries).
+
+| | Balanced accuracy | m/b/p shown closed | CPU per audio second |
+|---|---|---|---|
+| lip-sync-engine 2.0.0, 250 ms streaming chunks with context and lookahead | **54.6%** | **92%** | ~350 ms |
+| lip-sync-engine 1.0.3, 250 ms chunks analysed alone | 33.0% | 90% (but 29% of vowels shown closed too) | ~1800 ms |
+| HeadAudio 1.1.0 | 42.5% | 48% | ~7 ms |
+| wlipsync 1.3.1 (example voice profile) | 42.1% | 47% | ~9 ms |
+
+The table below summarises how each one works.
 
 | | lip-sync-engine | [HeadAudio](https://github.com/met4citizen/HeadAudio) | [wlipsync](https://github.com/mrxz/wlipsync) |
 |---|---|---|---|
@@ -262,15 +271,15 @@ This comparison is based on reading each project's code and documentation. **We 
 | Runs in | Web Workers (WASM) | AudioWorklet | AudioWorklet (WASM) |
 | Size | 1.9 MB WASM + ~40 MB models | 14 kB model | ~12 KB WASM |
 | Latency | Per chunk, plus lookahead for best quality | ~16 ms frames, ~50 ms claimed latency | ~11 ms hop |
-| Cost | ~115 MB and ~0.5 s decoder build per worker, ~0.3-0.4 CPU s per audio second | ~1% of a core, under 1 MB | Far lower than lip-sync-engine (not measured) |
+| Cost | ~115 MB and ~0.5 s decoder build per worker, ~0.3-0.4 CPU s per audio second | ~7 ms CPU per audio second, under 1 MB | ~9 ms CPU per audio second, under 1 MB |
 | Model / setup | Bundled English models, no setup | Bundled English model trained on ~40 min of Kokoro TTS voices | Needs a per-voice profile calibrated in Unity |
 
 - **lip-sync-engine** keeps closed-lip shapes (M, B, P) and their timing, because it recognises the actual phones. It also shows F/V (G), L (H) and idle (X). The cost is memory, CPU, start-up time, and the need for surrounding audio (context and lookahead) to reach its best quality.
-- **HeadAudio** is far cheaper and nearly instant. Its own README calls its accuracy "far from optimal". Its majority vote and 120 ms minimum hold probably smooth away short lip closures (our reading of the code, not measured).
-- **wlipsync** is the lightest option but only tracks vowels and volume, so it cannot show closed lips or F/V.
+- **HeadAudio** is far cheaper and nearly instant. Its own README calls its accuracy "far from optimal". In our test it showed closed lips for only 48% of m/b/p sounds.
+- **wlipsync** is the lightest option but only tracks vowels and volume. It closes the mouth only through silence or low volume (47% of m/b/p sounds in our test) and has no F/V shape. It was the best at wide-open and rounded vowels.
 - **[TalkingHead](https://github.com/met4citizen/TalkingHead)** is a three.js 3D avatar library, not an audio analyser. Its own lip-sync is driven by text and word timestamps (rule-based word to viseme mapping), and it uses HeadAudio for audio-only lip-sync.
 
-**In short:** of the audio-only options, lip-sync-engine gives the best articulation. HeadAudio and wlipsync cost far less and have near-zero latency. Pick based on whether accuracy or cost matters more for your app.
+**In short:** with context and lookahead, lip-sync-engine is clearly the most accurate of the audio-only options, and the only one that reliably shows lip closures. HeadAudio and wlipsync cost about 40 to 50 times less CPU and have near-zero latency. Analysed chunk by chunk without context, lip-sync-engine falls below both.
 
 ## 📊 API Overview
 
