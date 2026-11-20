@@ -244,7 +244,7 @@ Calls made while startup is in progress share that startup, and calls made after
     - `'first'`: only the `init()` worker builds it during startup; workers started by `warmup()` build it on their first job. Jobs go to workers whose decoder is built first.
     - `false`: each worker builds it on its first job.
   - `shareAssets?: boolean`: compile the `.wasm` file once. The first worker sends its compiled module back, and later workers (including those of pools created later) reuse it. Default `true`. Each worker still loads its own copy of the model file, normally from the browser's HTTP cache after the first download.
-  - `recognizer?: RecognizerKind`: speech recognizer for all workers. Default `'pocketsphinx'`. `'phonetic'` recognizes phones without words. It uses about a third of the CPU, about 60 MB less memory per worker, and returns the first chunk much sooner, but its mouth shapes are clearly worse: about 62% agreement against 87% for the default in the streaming benchmark (agreement is the share of 10 ms frames whose shape matches a whole-utterance reference; see [BENCHMARK.md](../BENCHMARK.md#mouth-cue-quality)). It ignores `dialogText`. Use it only on devices that cannot keep up otherwise.
+  - `recognizer?: RecognizerKind`: speech recognizer for all workers. Default `'pocketsphinx'`. `'phonetic'` recognizes phones without words. It uses about a third of the CPU, about 60 MB less memory per worker, and returns the first chunk much sooner, but its mouth shapes are clearly worse: about 25 points lower agreement than the default recognizer in a separate benchmark run (agreement is the share of 10 ms frames whose shape matches a whole-utterance reference; see [BENCHMARK.md](../BENCHMARK.md#mouth-cue-quality)). It ignores `dialogText`. Use it only on devices that cannot keep up otherwise.
 
 **Returns:** `Promise<void>`.
 
@@ -364,7 +364,7 @@ const allCues = results.flatMap((result, i) => {
 
 #### `createStreamAnalyzer(options?)`
 
-Creates a [`StreamAnalyzerController`](#streamanalyzercontroller) that accepts audio chunks as they arrive (for example from a WebSocket or `MediaRecorder`) and returns each chunk's cues.
+Creates a [`StreamAnalyzerController`](#streamanalyzercontroller) that accepts audio chunks as they arrive (for example from a WebSocket, a text-to-speech stream, or an `AudioWorklet` microphone tap; see [Microphone](./streaming-analysis.md#microphone)) and returns each chunk's cues.
 
 **Parameters:**
 - `options?: StreamAnalyzerOptions`: `LipSyncEngineOptions` applied to every chunk, plus the windowing options in [`StreamAnalyzerOptions`](#streamanalyzeroptions).
@@ -467,7 +467,7 @@ Errors other than `WorkerPoolDestroyedError` are plain `Error` objects. Match th
 | `WorkerPool not initialized. Call init() first.` | `warmup()`, `analyze()`, and `analyzeChunks()` reject, and `createStreamAnalyzer()` throws, when `init()` has not finished (also after `destroy()`, or after every worker has failed). |
 | `Worker failed to load: <detail>` | `init()` or `warmup()`: a worker's script failed to load (for example a wrong `workerScriptUrl` or missing CORS headers), or the worker threw while starting. |
 | `Worker initialization failed: <detail>` | `init()` or `warmup()`: a worker could not load the engine files or start the engine (for example a wrong `wasmPath`, `dataPath`, or `jsPath`, or missing CORS headers). |
-| `Worker crashed: <detail>` | The job a worker was running when it crashed. The pool removes that worker and does not replace it on its own; call `warmup()` to start a replacement. |
+| `Worker crashed: <detail>` | The job a worker was running when it crashed. The pool removes that worker and does not replace it on its own; call `warmup()` to start a replacement, or `init()` if it was the last worker. |
 | `All WorkerPool workers failed. Call init() to restart the pool.` | Queued jobs, once every worker has failed and none is starting. Call `init()` to start the pool again. |
 | `WorkerPoolDestroyedError` | Pending promises when `destroy()` is called. See [WorkerPoolDestroyedError](#workerpooldestroyederror). |
 

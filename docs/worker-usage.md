@@ -251,8 +251,9 @@ let poolPromise: Promise<WorkerPool> | null = null;
 export function getPool(): Promise<WorkerPool> {
   if (!poolPromise) {
     const pool = WorkerPool.getInstance(2);
-    // A failed start is kept: reload the page to retry
     poolPromise = pool.init().then(() => pool);
+    // A failed start is not cached by the pool, so the next call tries again
+    poolPromise.catch(() => { poolPromise = null; });
   }
   return poolPromise;
 }
@@ -509,7 +510,7 @@ Every pool error message, and when it occurs, is listed under [WorkerPool Errors
 - [`WorkerPoolDestroyedError`](./api-reference.md#workerpooldestroyederror): expected during teardown. Ignore it with `error instanceof WorkerPoolDestroyedError`; the next `getInstance()` call creates a new pool.
 - `WorkerPool not initialized. Call init() first.`: await `init()` before analyzing or calling `warmup()`.
 - `Worker failed to load: ...` or `Worker initialization failed: ...`: fix the worker script URL, the WASM paths, or the CORS headers (see [CORS Issues](#cors-issues)), then call `init()` again. A failed pool startup is not cached.
-- `Worker crashed: ...`: the other workers keep running. Call `warmup()` to start a replacement.
+- `Worker crashed: ...`: any other workers keep running. Call `warmup()` to start a replacement, or `init()` if it was the last worker.
 - `All WorkerPool workers failed. Call init() to restart the pool.`: call `init()` (and `warmup()`) again.
 
 ### Worker Script Not Found
@@ -538,7 +539,7 @@ Each warm worker uses about 115 MB, so memory grows with the worker count, not w
 
 - **Use fewer workers.** One or two are enough for streaming speech (see [Choose a Worker Count](#choose-a-worker-count)).
 - **Build extra decoders only when needed.** With `prewarm: 'first'`, only the `init()` worker builds its decoder at start-up; workers started by `warmup()` build theirs on their first job, and jobs go to workers that already have one first.
-- **Use the phonetic recognizer as a last resort.** `recognizer: 'phonetic'` used about 60 MB less memory per worker and about a third of the CPU, but only about 62% of frames matched the reference instead of 87% ([BENCHMARK.md](../BENCHMARK.md)). It also ignores `dialogText`.
+- **Use the phonetic recognizer as a last resort.** `recognizer: 'phonetic'` used about 60 MB less memory per worker and about a third of the CPU, but about 25 points fewer frames matched the reference in a separate benchmark run ([BENCHMARK.md](../BENCHMARK.md)). It also ignores `dialogText`.
 
 ```typescript
 import { WorkerPool } from 'lip-sync-engine';

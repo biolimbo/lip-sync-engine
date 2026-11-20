@@ -169,7 +169,7 @@ async function lipSyncUtterance(
   const stream = pool.createStreamAnalyzer({
     sampleRate: 16000,
     contextMs: 500,  // earlier audio analyzed with each chunk
-    lookaheadMs: 500 // later audio to wait for, never past the chunk's playback time
+    lookaheadMs: 500 // later audio, waited for only while playback allows
   });
 
   const done: Promise<void>[] = [];
