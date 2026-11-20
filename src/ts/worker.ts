@@ -4,7 +4,8 @@
  */
 
 import { WasmLoader } from './WasmLoader';
-import type { LipSyncEngineModule, LipSyncEngineOptions, LipSyncEngineResult } from './types';
+import { applyExtendedShapes } from './extendedShapes';
+import type { LipSyncEngineModule, LipSyncEngineOptions, LipSyncEngineResult, RecognizerKind } from './types';
 
 // Worker message types
 export interface WorkerAnalyzeRequest {
@@ -26,15 +27,37 @@ export interface WorkerInitRequest {
   wasmPath: string;
   dataPath: string;
   jsPath: string;
+  /** Build the speech decoder during init (default true) */
+  prewarm?: boolean;
+  /** Speech recognizer (default 'pocketsphinx') */
+  recognizer?: RecognizerKind;
+  /** Compiled module shared by the pool (optional) */
+  wasmModule?: WebAssembly.Module;
+  /** .data contents shared by the pool (optional) */
+  dataBuffer?: ArrayBuffer;
 }
 
 export interface WorkerInitResponse {
   type: 'ready' | 'error';
   error?: string;
+  /** True when the speech decoder is already built */
+  warm?: boolean;
 }
 
-export type WorkerRequest = WorkerAnalyzeRequest | WorkerInitRequest;
-export type WorkerResponse = WorkerAnalyzeResponse | WorkerInitResponse;
+export interface WorkerStatsRequest {
+  type: 'stats';
+  id: number;
+}
+
+export interface WorkerStatsResponse {
+  type: 'stats';
+  id: number;
+  /** Size of this worker's WebAssembly memory in bytes */
+  wasmHeapBytes: number;
+}
+
+export type WorkerRequest = WorkerAnalyzeRequest | WorkerInitRequest | WorkerStatsRequest;
+export type WorkerResponse = WorkerAnalyzeResponse | WorkerInitResponse | WorkerStatsResponse;
 
 // Worker state
 let wasmModule: LipSyncEngineModule | null = null;
@@ -43,12 +66,16 @@ let modelsPath = '/models';
 /**
  * Initialize WASM module in worker context
  */
-async function initializeWorker(wasmPath: string, dataPath: string, jsPath: string): Promise<void> {
+async function initializeWorker(message: WorkerInitRequest): Promise<boolean> {
+  const { wasmPath, dataPath, jsPath } = message;
+  const prewarm = message.prewarm !== false;
   try {
     wasmModule = await WasmLoader.loadModule({
       wasmPath,
       dataPath,
-      jsPath
+      jsPath,
+      wasmModule: message.wasmModule,
+      dataBuffer: message.dataBuffer
     });
 
     // Initialize the engine
@@ -63,6 +90,24 @@ async function initializeWorker(wasmPath: string, dataPath: string, jsPath: stri
       const errorMsg = errorPtr ? wasmModule.UTF8ToString(errorPtr) : 'Unknown initialization error';
       throw new Error(errorMsg);
     }
+
+    if (message.recognizer === 'phonetic') {
+      if (typeof wasmModule._lipsyncengine_set_recognizer !== 'function') {
+        throw new Error('This WASM build does not support the phonetic recognizer');
+      }
+      wasmModule._lipsyncengine_set_recognizer(1);
+    }
+
+    // Build the speech decoder now (off the main thread) so the first chunk
+    // does not pay for loading the models.
+    if (prewarm && typeof wasmModule._lipsyncengine_prewarm === 'function') {
+      if (wasmModule._lipsyncengine_prewarm() !== 0) {
+        const errorPtr = wasmModule._lipsyncengine_get_last_error();
+        throw new Error(errorPtr ? wasmModule.UTF8ToString(errorPtr) : 'Unknown prewarm error');
+      }
+      return true;
+    }
+    return false;
   } catch (error) {
     throw new Error(`Worker initialization failed: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -78,6 +123,8 @@ function analyzeAudio(pcm16: Int16Array, options: LipSyncEngineOptions): LipSync
 
   const sampleRate = options.sampleRate || 16000;
   const dialogText = options.dialogText || '';
+
+  applyExtendedShapes(wasmModule, options.extendedShapes);
 
   // Allocate memory for PCM buffer
   const pcmByteLength = pcm16.length * 2;
@@ -133,8 +180,8 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
   if (message.type === 'init') {
     try {
-      await initializeWorker(message.wasmPath, message.dataPath, message.jsPath);
-      const response: WorkerInitResponse = { type: 'ready' };
+      const warm = await initializeWorker(message);
+      const response: WorkerInitResponse = { type: 'ready', warm };
       self.postMessage(response);
     } catch (error) {
       const response: WorkerInitResponse = {
@@ -143,6 +190,13 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       };
       self.postMessage(response);
     }
+  } else if (message.type === 'stats') {
+    const response: WorkerStatsResponse = {
+      type: 'stats',
+      id: message.id,
+      wasmHeapBytes: wasmModule ? wasmModule.HEAP16.buffer.byteLength : 0
+    };
+    self.postMessage(response);
   } else if (message.type === 'analyze') {
     try {
       const result = analyzeAudio(message.pcm16, message.options);

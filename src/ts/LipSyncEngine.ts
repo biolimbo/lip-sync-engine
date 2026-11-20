@@ -5,6 +5,7 @@ import type {
   WasmLoaderOptions,
 } from './types';
 import { WasmLoader } from './WasmLoader';
+import { applyExtendedShapes } from './extendedShapes';
 
 /**
  * Main API class for Lip Sync
@@ -139,6 +140,8 @@ export class LipSyncEngine {
     if (sampleRate <= 0) {
       throw new Error('sampleRate must be positive');
     }
+
+    applyExtendedShapes(this.module, options.extendedShapes);
 
     let pcm16Ptr = 0;
     let dialogPtr = 0;

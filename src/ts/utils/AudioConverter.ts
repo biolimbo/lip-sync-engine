@@ -117,8 +117,14 @@ export async function recordAudio(
   const audioBlob = new Blob(audioChunks);
   const arrayBuffer = await audioBlob.arrayBuffer();
 
+  // Decode only; close the context so repeated calls do not leak it
   const audioContext = new AudioContext({ sampleRate });
-  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  let audioBuffer: AudioBuffer;
+  try {
+    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  } finally {
+    void audioContext.close();
+  }
 
   const pcm16 = audioBufferToInt16(audioBuffer, sampleRate);
 
@@ -147,8 +153,14 @@ export async function loadAudio(
     arrayBuffer = await source.arrayBuffer();
   }
 
+  // Decode only; close the context so repeated calls do not leak it
   const audioContext = new AudioContext({ sampleRate: targetSampleRate });
-  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  let audioBuffer: AudioBuffer;
+  try {
+    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  } finally {
+    void audioContext.close();
+  }
 
   const pcm16 = audioBufferToInt16(audioBuffer, targetSampleRate);
 
