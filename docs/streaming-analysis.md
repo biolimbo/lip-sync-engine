@@ -40,7 +40,7 @@ const results = await stream.finalize();
 Creates a new streaming analyzer controller.
 
 **Parameters:**
-- `options` - `LipSyncEngineOptions` - Configuration applied to all chunks
+- `options` - `StreamAnalyzerOptions` - `LipSyncEngineOptions` applied to all chunks, plus the 1.1.0 windowing options (`contextMs`, `lookaheadMs`, ...). See the API reference.
 
 **Returns:** `StreamAnalyzerController`
 
@@ -58,6 +58,14 @@ Queues a chunk for analysis. Returns immediately without blocking.
 const index = stream.addChunk(audioChunk);
 console.log(`Queued chunk ${index}`);
 ```
+
+### `StreamAnalyzerController.getResult(index)`
+
+Promise for one chunk's result (1.1.0). Times are relative to the chunk start.
+
+### `StreamAnalyzerController.end()`
+
+No more chunks will be added (1.1.0). Chunks still waiting for lookahead are analysed straight away.
 
 ### `StreamAnalyzerController.finalize()`
 
@@ -166,55 +174,49 @@ const results = await stream.finalize();
 
 ## Performance Best Practices
 
-### 1. Pre-warm the Worker Pool
+Numbers below come from `BENCHMARK.md` (real speech, headless Chromium).
 
-Create all workers upfront to avoid initialization overhead:
+### 1. Create the pool once and keep it
+
+Since 1.1.0 each worker builds its speech decoder once (about 0.5 s of CPU) and reuses it. Destroying and re-creating the pool for every utterance pays that cost again before the first chunk.
 
 ```typescript
-const pool = WorkerPool.getInstance(4);
+const pool = WorkerPool.getInstance(2);
 await pool.init({ /* paths */ });
-await pool.warmup(); // Creates all 4 workers immediately
-
-const stream = pool.createStreamAnalyzer({ /* options */ });
+await pool.warmup();
+// ...use it for every utterance; call pool.destroy() only when done for good
 ```
 
-### 2. Choose Optimal Worker Count
+### 2. Use few workers
 
-Match worker count to your CPU cores and workload:
+A warm worker analyses a 250 ms chunk in well under 100 ms, so one or two workers keep up with real-time speech. Each worker costs about 115 MB, so more workers mostly cost memory, which matters most on tablets and kiosks.
+
+### 3. Give chunks context and lookahead
+
+Chunks analysed on their own lose most mouth shapes: on short streaming chunks only 37 to 68% of frames match a whole-utterance analysis, and the mouth often snaps shut at chunk boundaries. Let the controller analyse each chunk inside a window of surrounding audio:
 
 ```typescript
-// Auto-detect CPU cores
-const pool = WorkerPool.getInstance(navigator.hardwareConcurrency);
+const stream = pool.createStreamAnalyzer({
+  sampleRate: 16000,
+  contextMs: 500,    // earlier audio
+  lookaheadMs: 500,  // later audio, waited for only while playback allows
+});
 
-// Or set explicitly
-const pool = WorkerPool.getInstance(4); // 4 workers
+const index = stream.addChunk(chunk);
+const result = await stream.getResult(index); // cues for this chunk only
+
+// when the utterance's audio is complete
+stream.end();
 ```
 
-### 3. Chunk Size Matters
+With this, 82 to 90% of frames match. The first chunk is still analysed immediately, and waiting for lookahead stops early enough for each chunk's cues to be ready before it plays (assuming playback starts when the first result returns).
 
-Optimal chunk size balances throughput and latency:
-
-```typescript
-// Too small: High overhead from worker communication
-const tooSmall = new Int16Array(1000); // ~60ms at 16kHz
-
-// Optimal: 1-3 seconds of audio
-const optimal = new Int16Array(16000 * 2); // 2 seconds at 16kHz
-
-// Too large: Reduces parallelism potential
-const tooLarge = new Int16Array(16000 * 30); // 30 seconds
-```
-
-### 4. Monitor Queue Depth
-
-Check if workers are keeping up with incoming chunks:
+### 4. Monitor queue depth
 
 ```typescript
-stream.addChunk(chunk);
-
 const stats = stream.getStats();
 if (stats.poolStats.queuedJobs > 10) {
-  console.warn('Queue is backing up - consider more workers');
+  console.warn('Queue is backing up');
 }
 ```
 

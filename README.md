@@ -11,13 +11,23 @@ WebAssembly port of [Rhubarb Lip Sync](https://github.com/DanielSWolf/rhubarb-li
 
 - 🚀 **High Performance** - Runs natively in browser via WebAssembly
 - 🎯 **Accurate** - Uses PocketSphinx speech recognition for precise phoneme detection
-- 📦 **Small Bundle** - Only ~80KB JavaScript + 2.2MB WASM + models
+- 📦 **Self-contained** - ~80 KB JavaScript + 1.9 MB WASM + ~40 MB speech models (cached by the browser, loaded once per worker)
 - 🔧 **TypeScript** - Full type definitions included
 - 🌐 **Framework-Agnostic** - Works with React, Vue, Svelte, vanilla JS, and any framework
 - 🧵 **Web Workers** - Non-blocking analysis with worker pool
-- 🔄 **Streaming Support** - Dynamic real-time chunk processing for live audio
+- 🔄 **Streaming Support** - Real-time chunk processing for live audio, with surrounding-audio context for near whole-utterance quality
 - 🎨 **Complete API** - Audio utilities, format conversion, microphone recording
 - 📱 **Browser-Native** - No server required, runs entirely client-side
+
+## 🆕 What's New in 1.1.0
+
+- **Faster calls.** Each worker now keeps its PocketSphinx decoder between calls instead of rebuilding it every time (about 0.4 s per call in 1.0.x). Analysing a 250 ms chunk dropped from about 450 ms to under 100 ms, and the first chunk on a fresh pool from about 0.7 s to about 0.1 s. Output is frame-for-frame identical to 1.0.3 for the same input.
+- **No more out-of-memory workers.** 1.0.x workers ran out of memory after roughly 480 calls. That is fixed, so **keep the pool alive between utterances** instead of destroying and re-creating it.
+- **Better streaming quality.** `createStreamAnalyzer()` can analyse each chunk together with the audio around it (`contextMs`, `lookaheadMs`). In our streaming test this raised agreement with whole-utterance analysis from 37-68% to 82-90%, and cut false lip closures at chunk boundaries from 11-34% of frames to about 2% (see [Streaming Quality](#-streaming-quality)).
+- **Nine mouth shapes.** `extendedShapes: 'GHX'` adds Rhubarb's F/V, L and idle shapes to A-F (default stays A-F). With 500 ms context and lookahead, nine-shape streaming reaches 85-86% agreement with a nine-shape whole-answer reference.
+- **New pool options and methods:** `init({ prewarm, shareAssets, recognizer })`, `pool.getMemoryStats()`, and `getResult(index)` / `end()` on the stream controller.
+
+See [BENCHMARK.md](./BENCHMARK.md) for the full performance measurements.
 
 ## 📦 Installation
 
@@ -44,7 +54,7 @@ const result = await analyze(pcm16, {
 // Use mouth cues for animation
 result.mouthCues.forEach(cue => {
   console.log(`${cue.start}s - ${cue.end}s: ${cue.value}`);
-  // Output: 0.00s - 0.35s: X
+  // Output: 0.00s - 0.35s: A
   //         0.35s - 0.50s: D
   //         0.50s - 0.85s: B
   //         ...
@@ -162,9 +172,9 @@ await lipSyncEngine.init();
 
 // Or pin to a specific version for production:
 await lipSyncEngine.init({
-  wasmPath: 'https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.wasm',
-  dataPath: 'https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.data',
-  jsPath: 'https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.js'
+  wasmPath: 'https://unpkg.com/lip-sync-engine@1.1.0/dist/wasm/lip-sync-engine.wasm',
+  dataPath: 'https://unpkg.com/lip-sync-engine@1.1.0/dist/wasm/lip-sync-engine.data',
+  jsPath: 'https://unpkg.com/lip-sync-engine@1.1.0/dist/wasm/lip-sync-engine.js'
 });
 ```
 
@@ -179,19 +189,30 @@ For self-hosting WASM files, copy `node_modules/lip-sync-engine/dist/wasm/*` to 
 
 ## 🎨 Mouth Shapes (Visemes)
 
-LipSyncEngine.js generates 9 mouth shapes based on Preston Blair's phoneme categorization:
+LipSyncEngine.js outputs Rhubarb Lip Sync's six basic mouth shapes (definitions from `src/cpp/core/Shape.h`):
 
 | Shape | Image | Description | Example Sounds |
 |-------|-------|-------------|----------------|
-| X | <img src="examples/assets/visemes/X.png" width="100"> | Closed/Rest | Silence |
-| A | <img src="examples/assets/visemes/A.png" width="100"> | Open | ah, aa, aw |
-| B | <img src="examples/assets/visemes/B.png" width="100"> | Lips together | p, b, m |
-| C | <img src="examples/assets/visemes/C.png" width="100"> | Rounded | sh, ch, zh |
-| D | <img src="examples/assets/visemes/D.png" width="100"> | Tongue-teeth | th, dh, t, d, n, l |
-| E | <img src="examples/assets/visemes/E.png" width="100"> | Slightly open | eh, ae, uh |
-| F | <img src="examples/assets/visemes/F.png" width="100"> | F/V sound | f, v |
-| G | <img src="examples/assets/visemes/G.png" width="100"> | Open back | k, g, ng |
-| H | <img src="examples/assets/visemes/H.png" width="100"> | Wide open | ee, ih, ey |
+| A | <img src="examples/assets/visemes/A.png" width="100"> | Closed mouth | m, b, p |
+| B | <img src="examples/assets/visemes/B.png" width="100"> | Clenched teeth, slightly open | most consonants, ee as in b**ee** |
+| C | <img src="examples/assets/visemes/C.png" width="100"> | Open mouth | e as in m**e**n, u as in s**u**n |
+| D | <img src="examples/assets/visemes/D.png" width="100"> | Wide open | a as in f**a**ther, b**a**t |
+| E | <img src="examples/assets/visemes/E.png" width="100"> | Rounded | o as in **o**ff |
+| F | <img src="examples/assets/visemes/F.png" width="100"> | Puckered lips | y**ou**, b**oy**, **w**ay |
+
+By default silence is shown as A (closed). Pass `extendedShapes: 'GHX'` (since 1.1.0) to also get Rhubarb's extended shapes, nine in total:
+
+| Shape | Image | Description | Example Sounds |
+|-------|-------|-------------|----------------|
+| G | <img src="examples/assets/visemes/G.png" width="100"> | Upper teeth on lower lip | f, v |
+| H | <img src="examples/assets/visemes/H.png" width="100"> | Tongue raised behind teeth | long l |
+| X | <img src="examples/assets/visemes/X.png" width="100"> | Idle, relaxed | silence |
+
+```typescript
+const result = await pool.analyze(pcm16, { sampleRate: 16000, extendedShapes: 'GHX' });
+```
+
+Any subset works (for example `'X'` for just the idle shape). The default stays A to F so avatars drawn for 1.0.x keep working.
 
 ## 🔬 How It Works
 
@@ -199,6 +220,55 @@ LipSyncEngine.js generates 9 mouth shapes based on Preston Blair's phoneme categ
 2. **Phoneme Mapping** - Phonemes are mapped to Preston Blair mouth shapes
 3. **Timing Optimization** - Animation is smoothed for natural transitions
 4. **JSON Output** - Returns timestamped mouth shape cues
+
+## 🎯 Streaming Quality
+
+Recognition needs surrounding audio. When short streaming chunks are analysed one at a time, most mouth shapes are lost and the mouth snaps shut at chunk boundaries. Analysing each chunk with 500 ms of context and 500 ms of lookahead fixes most of this.
+
+**How we measured.** 116 s of real read speech (CMU ARCTIC, 2 speakers), split into 8 "answers" of about 15 s each. Each answer was streamed as 24 kHz chunks and resampled to 16 kHz, like a realtime voice app. The reference is the whole answer analysed in one call with its transcript. Mouth cues were compared on a 10 ms grid.
+
+- **Agreement**: share of frames with the same mouth shape as the reference.
+- **False closures**: frames within 150 ms of a chunk boundary where the result shows a closed mouth but the reference shows it open.
+
+**Agreement with the reference** (higher is better):
+
+| Setup | 100 ms chunks | 250 ms | 500 ms | 1000 ms |
+|---|---|---|---|---|
+| Each chunk analysed alone (1.0.3, and the 1.1.0 default) | 41.9% | 36.8% | 53.0% | 68.0% |
+| 1.1.0, `contextMs: 500, lookaheadMs: 500`, audio arriving faster than playback | **90.4%** | **88.4%** | **87.7%** | **87.9%** |
+| 1.1.0, same options, audio arriving at 3x playback speed | 83.4% | 81.8% | 83.1% | 85.3% |
+
+**False closures at chunk boundaries** (lower is better):
+
+| Setup | 100 ms chunks | 250 ms | 500 ms | 1000 ms |
+|---|---|---|---|---|
+| Each chunk analysed alone (1.0.3, and the 1.1.0 default) | 10.8% | 33.7% | 25.6% | 24.9% |
+| 1.1.0, `contextMs: 500, lookaheadMs: 500`, audio arriving faster than playback | **1.3%** | **1.7%** | **1.4%** | **2.2%** |
+
+For comparison, analysing the whole answer in one call without a transcript reaches 94.2% agreement. At 100 ms chunks analysed alone, almost every chunk comes out as a single "B" shape. The 1.1.0 default (no context, no lookahead) gives exactly the same results as 1.0.3.
+
+**Phonetic recognizer.** `init({ recognizer: 'phonetic' })` recognises phones without words. It is much cheaper (about 0.12 vs 0.39 CPU seconds per second of audio, about 80 vs 140 MB per extra worker, first chunk in about 26 ms vs 136 ms on a fresh pool), but mouth shapes are clearly worse: about 62% agreement with context and lookahead at 250 ms and 1000 ms chunks, against 87-88% for the default recognizer. It also ignores `dialogText`. Use it only on weak devices or when speed matters more than accuracy.
+
+## ⚖️ How It Compares to Other Browser Lip-Sync Libraries
+
+This comparison is based on reading each project's code and documentation. **We have not measured these libraries head-to-head.**
+
+| | lip-sync-engine | [HeadAudio](https://github.com/met4citizen/HeadAudio) | [wlipsync](https://github.com/mrxz/wlipsync) |
+|---|---|---|---|
+| Method | Full speech recognition (PocketSphinx) plus Rhubarb's animation rules | MFCC features, nearest-prototype classifier over 39 phoneme prototypes | MFCC features matched against per-vowel profiles (port of uLipSync) |
+| Output | 6 Rhubarb mouth shapes (A-F), or 9 with `extendedShapes: 'GHX'` (adds F/V, L and idle) | 15 Oculus visemes | Vowels (A, I, U, E, O, silence) and volume |
+| Runs in | Web Workers (WASM) | AudioWorklet | AudioWorklet (WASM) |
+| Size | 1.9 MB WASM + ~40 MB models | 14 kB model | ~12 KB WASM |
+| Latency | Per chunk, plus lookahead for best quality | ~16 ms frames, ~50 ms claimed latency | ~11 ms hop |
+| Cost | ~115 MB and ~0.5 s decoder build per worker, ~0.3-0.4 CPU s per audio second | ~1% of a core, under 1 MB | Far lower than lip-sync-engine (not measured) |
+| Model / setup | Bundled English models, no setup | Bundled English model trained on ~40 min of Kokoro TTS voices | Needs a per-voice profile calibrated in Unity |
+
+- **lip-sync-engine** keeps closed-lip shapes (M, B, P) and their timing, because it recognises the actual phones. With `extendedShapes: 'GHX'` it also shows F/V (G), L (H) and idle (X). The cost is memory, CPU, start-up time, and the need for surrounding audio (context and lookahead) to reach its best quality.
+- **HeadAudio** is far cheaper and nearly instant. Its own README calls its accuracy "far from optimal". Its majority vote and 120 ms minimum hold probably smooth away short lip closures (our reading of the code, not measured).
+- **wlipsync** is the lightest option but only tracks vowels and volume, so it cannot show closed lips or F/V.
+- **[TalkingHead](https://github.com/met4citizen/TalkingHead)** is a three.js 3D avatar library, not an audio analyser. Its own lip-sync is driven by text and word timestamps (rule-based word to viseme mapping), and it uses HeadAudio for audio-only lip-sync.
+
+**In short:** of the audio-only options, lip-sync-engine gives the best articulation. HeadAudio and wlipsync cost far less and have near-zero latency. Pick based on whether accuracy or cost matters more for your app.
 
 ## 📊 API Overview
 
@@ -225,23 +295,50 @@ const result = await lipSyncEngine.analyze(pcm16, options);
 ```typescript
 import { WorkerPool } from 'lip-sync-engine';
 
-const pool = WorkerPool.getInstance(4);
-await pool.init(); // Loads worker from CDN automatically
-await pool.warmup(); // Pre-create workers
+// Create the pool once and keep it for the whole session.
+// Each worker uses about 115 MB, so 2 workers are enough for one voice.
+const pool = WorkerPool.getInstance(2);
+await pool.init();   // Loads from CDN and builds the first worker's decoder
+await pool.warmup(); // Starts the remaining workers
 
-// Create streaming analyzer
-const stream = pool.createStreamAnalyzer({
-  dialogText: "Expected dialog",
-  sampleRate: 16000
-});
+// One stream analyzer per utterance
+async function lipSyncUtterance(audioStream: AsyncIterable<Int16Array>) {
+  const stream = pool.createStreamAnalyzer({
+    sampleRate: 16000,
+    contextMs: 500,   // earlier audio analysed with each chunk
+    lookaheadMs: 500  // later audio to wait for (never past the chunk's playback time)
+  });
 
-// Add chunks as they arrive from WebSocket, MediaRecorder, etc.
-for await (const chunk of audioStream) {
-  stream.addChunk(chunk); // Non-blocking!
+  const done: Promise<void>[] = [];
+  for await (const chunk of audioStream) {
+    const index = stream.addChunk(chunk); // Non-blocking
+    done.push(
+      stream.getResult(index).then(result => {
+        // Cue times are relative to the start of this chunk
+        queueChunk(index, chunk, result.mouthCues); // your playback code
+      })
+    );
+  }
+
+  stream.end(); // All audio received: analyse the last chunks now
+  await Promise.all(done);
 }
 
-// Get all results in order
-const results = await stream.finalize();
+// Do not call pool.destroy() between utterances; reuse the pool.
+```
+
+The first chunk is always analysed straight away (no lookahead), so time to first audio does not grow. Later chunks wait for up to `lookaheadMs` of following audio, but never past their estimated playback time. With `contextMs` and `lookaheadMs` left at `0`, each chunk is analysed alone, exactly as in 1.0.x. `finalize()` still works and returns all results in order.
+
+Other pool options (all optional):
+
+```typescript
+await pool.init({
+  prewarm: true,            // build each decoder during init()/warmup() (default). 'first': only the init() worker. false: on first job
+  shareAssets: true,        // compile the .wasm once and share the compiled module with workers (default)
+  recognizer: 'pocketsphinx' // default. 'phonetic' is cheaper but less accurate (see Streaming Quality)
+});
+
+const { workers, totalBytes } = await pool.getMemoryStats(); // WASM heap bytes per worker
 ```
 
 See [Streaming Analysis Guide](./docs/streaming-analysis.md) for complete usage patterns.
@@ -275,7 +372,7 @@ const resampled = resample(float32Array, 44100, 16000);
 interface MouthCue {
   start: number;  // seconds
   end: number;    // seconds
-  value: string;  // X, A, B, C, D, E, F, G, or H
+  value: string;  // A to F, plus G, H, X when extendedShapes is set
 }
 
 interface LipSyncEngineResult {
@@ -288,10 +385,28 @@ interface LipSyncEngineResult {
 }
 
 interface LipSyncEngineOptions {
-  dialogText?: string;  // Improves accuracy significantly
-  sampleRate?: number;  // Default: 16000 (recommended)
+  dialogText?: string;      // Improves accuracy significantly
+  sampleRate?: number;      // Default: 16000 (recommended)
+  extendedShapes?: string;  // New in 1.1.0: any of 'GHX' for nine shapes. Default '' (A-F)
 }
+
+// New in 1.1.0
+interface StreamAnalyzerOptions extends LipSyncEngineOptions {
+  contextMs?: number;            // Default 0. Recommended: 500
+  lookaheadMs?: number;          // Default 0. Recommended: 500
+  firstChunkLookahead?: boolean; // Default false
+  deadlineMarginMs?: number;     // Default 150
+  maxWaitMs?: number;            // Default 2000
+  maxConcurrent?: number;        // Default 2
+  maxBatchMs?: number;           // Default 3000
+}
+
+type PrewarmMode = boolean | 'first';
+type RecognizerKind = 'pocketsphinx' | 'phonetic';
+// WorkerStatsRequest / WorkerStatsResponse: worker messages behind getMemoryStats()
 ```
+
+See the [API Reference](./docs/api-reference.md) for every option.
 
 ## 🛠️ Development
 

@@ -117,8 +117,9 @@ class WorkerPool {
   async warmup(): Promise<void>
   async analyze(pcm16: Int16Array, options?: LipSyncEngineOptions): Promise<LipSyncEngineResult>
   async analyzeChunks(chunks: Int16Array[], options?: LipSyncEngineOptions): Promise<LipSyncEngineResult[]>
-  createStreamAnalyzer(options?: LipSyncEngineOptions): StreamAnalyzerController
+  createStreamAnalyzer(options?: StreamAnalyzerOptions): StreamAnalyzerController
   getStats(): WorkerPoolStats
+  async getMemoryStats(): Promise<{ workers: number[]; totalBytes: number }>
   destroy(): void
 }
 ```
@@ -155,6 +156,12 @@ Initialize the worker pool. Must be called before analysis.
   - `dataPath?: string` - Path to data file
   - `jsPath?: string` - Path to JS loader file
   - `workerScriptUrl?: string` - Path to worker script
+  - `prewarm?: boolean | 'first'` - When each worker builds its speech decoder (the acoustic model, dictionary and language model; about 0.5 s of CPU per worker). Since 1.1.0.
+    - `true` (default): during `init()`/`warmup()`, so no analysis pays for it.
+    - `'first'`: only the `init()` worker; `warmup()` workers build it on their first job. Jobs go to workers that already have a decoder first.
+    - `false`: on each worker's first job (1.0.x timing).
+  - `shareAssets?: boolean` - Compile the `.wasm` once on the main thread and give the compiled module to every worker (default `true`). Also reused by pools created later. Since 1.1.0.
+  - `recognizer?: 'pocketsphinx' | 'phonetic'` - Speech recognizer for all workers (default `'pocketsphinx'`). `'phonetic'` recognizes phones without words: about 3x less CPU, about 60 MB less memory per worker and a much faster first chunk, but clearly worse mouth shapes (about 62% frame agreement against 87% in the streaming benchmark) and it ignores `dialogText`. Use it only on devices that cannot keep up otherwise. Since 1.1.0.
 
 **Returns:** `Promise<void>`
 
@@ -173,10 +180,12 @@ await pool.init({
 ```
 
 **Default CDN URLs:**
-- WASM: `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.wasm`
-- Data: `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.data`
-- JS: `https://unpkg.com/lip-sync-engine@1.0.3/dist/wasm/lip-sync-engine.js`
-- Worker: `https://unpkg.com/lip-sync-engine@1.0.3/dist/worker.js`
+- WASM: `https://unpkg.com/lip-sync-engine@<version>/dist/wasm/lip-sync-engine.wasm`
+- Data: `https://unpkg.com/lip-sync-engine@<version>/dist/wasm/lip-sync-engine.data`
+- JS: `https://unpkg.com/lip-sync-engine@<version>/dist/wasm/lip-sync-engine.js`
+- Worker: `https://unpkg.com/lip-sync-engine@<version>/dist/worker.js`
+
+**Keep the pool alive.** Since 1.1.0 a worker keeps its speech decoder between calls, so only pool start-up pays for building it. Destroying and re-creating the pool for every utterance pays that cost again each time. (In 1.0.x each call rebuilt the decoder and a worker's memory ran out after roughly 500 calls; that no longer happens.)
 
 #### `warmup()`
 
@@ -315,19 +324,53 @@ Terminate all workers and clean up resources.
 pool.destroy();
 ```
 
+#### `getMemoryStats()`
+
+WebAssembly memory size of each worker, in bytes. Since 1.1.0. Each worker also holds a copy of the model file (about 39 MB) and its JS heap on top of this.
+
+```typescript
+const { workers, totalBytes } = await pool.getMemoryStats();
+```
+
 ---
 
 ### StreamAnalyzerController
 
-Controller for dynamic streaming analysis. Created via `WorkerPool.createStreamAnalyzer()`.
+Controller for dynamic streaming analysis. Created via `WorkerPool.createStreamAnalyzer(options)`.
 
 ```typescript
 class StreamAnalyzerController {
   addChunk(chunk: Int16Array): number
+  getResult(index: number): Promise<LipSyncEngineResult>   // 1.1.0
+  end(): void                                               // 1.1.0
   async finalize(): Promise<LipSyncEngineResult[]>
   getStats(): StreamAnalyzerStats
 }
 ```
+
+#### `StreamAnalyzerOptions`
+
+Everything in `LipSyncEngineOptions`, plus (all since 1.1.0, all optional):
+
+| Option | Default | Meaning |
+|---|---|---|
+| `contextMs` | `0` | Earlier audio analysed together with each chunk. |
+| `lookaheadMs` | `0` | Later audio to wait for and analyse together with each chunk. |
+| `firstChunkLookahead` | `false` | Also wait for lookahead before the first chunk. |
+| `deadlineMarginMs` | `150` | Lookahead waiting stops early enough for a chunk's cues to be ready this long before it plays (assuming playback starts when the first result returns and runs in real time). |
+| `maxWaitMs` | `2000` | Upper limit on any chunk's wait for lookahead. |
+| `maxConcurrent` | `2` | Analyses of this stream running at once (windowed mode only). |
+| `maxBatchMs` | `3000` | Most audio covered by one batched analysis. Batches are also kept small enough to finish before their first chunk plays. |
+
+With `contextMs` and `lookaheadMs` both `0`, every chunk is analysed on its own, as in 1.0.x. With either set, each chunk is analysed inside a window of the surrounding audio and only that chunk's cues are returned, with times relative to the chunk start. Chunks that are ready at the same time share one analysis. For short streaming chunks this matters a lot for quality; `{ contextMs: 500, lookaheadMs: 500 }` is the measured recommendation (see `BENCHMARK.md`).
+
+#### `getResult(index)`
+
+Promise for one chunk's result. Use it to play each chunk as soon as its cues are ready.
+
+#### `end()`
+
+Tells the controller no more audio is coming, so chunks waiting for lookahead are analysed straight away. Call it when the utterance's audio is complete. `finalize()` calls it too.
 
 #### `addChunk(chunk)`
 
@@ -527,7 +570,7 @@ Represents a single mouth shape with timing.
 interface MouthCue {
   start: number;  // Start time in seconds
   end: number;    // End time in seconds
-  value: string;  // Mouth shape: X, A, B, C, D, E, F, G, or H
+  value: string;  // Mouth shape: A to F, plus G, H, X when extendedShapes is set
 }
 ```
 
@@ -552,8 +595,11 @@ Options for lip-sync analysis.
 
 ```typescript
 interface LipSyncEngineOptions {
-  dialogText?: string;  // Optional dialog text for better accuracy
-  sampleRate?: number;  // Sample rate (default: 16000, recommended: 16000)
+  dialogText?: string;      // Optional dialog text for better accuracy
+  sampleRate?: number;      // Sample rate (default: 16000, recommended: 16000)
+  extendedShapes?: string;  // Since 1.1.0. Extra Rhubarb shapes on top of A-F:
+                            // any of 'G' (F, V), 'H' (L), 'X' (idle). 'GHX' = all nine.
+                            // Default '' (A-F only, as in 1.0.x)
 }
 ```
 

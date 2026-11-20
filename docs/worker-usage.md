@@ -51,7 +51,7 @@ const result = await analyze(pcm16);
 Workers run analysis in a separate thread, keeping UI responsive:
 
 ```typescript
-//  Non-blocking, UI stays responsive
+// Non-blocking, UI stays responsive
 const pool = WorkerPool.getInstance();
 await pool.init();
 const result = await pool.analyze(pcm16);
@@ -62,9 +62,9 @@ const result = await pool.analyze(pcm16);
 
 | Feature | Main Thread | Web Workers |
 |---------|-------------|-------------|
-| **UI Responsiveness** | L Freezes |  Responsive |
-| **Parallel Processing** | L Sequential |  Parallel |
-| **Decoder Reuse** |  Yes |  Yes |
+| **UI Responsiveness** | Freezes | Responsive |
+| **Parallel Processing** | Sequential | Parallel |
+| **Decoder Reuse** | Yes | Yes |
 | **Performance (5 chunks)** | ~10-15s | ~2-3s |
 
 ---
@@ -147,7 +147,7 @@ const results = await pool.analyzeChunks(chunks, {
   dialogText: "Full dialog text for all chunks"
 });
 
-console.log(` Processed ${results.length} chunks`);
+console.log(`Processed ${results.length} chunks`);
 ```
 
 ### Combine Results
@@ -344,7 +344,7 @@ async function handleAnalyze(pcm16: Int16Array) {
 ### 1. Initialize Once
 
 ```typescript
-//  Good: Initialize once, reuse
+// Good: Initialize once, reuse
 const pool = WorkerPool.getInstance();
 await pool.init();
 
@@ -352,29 +352,29 @@ await pool.init();
 await pool.analyze(audio1);
 await pool.analyze(audio2);
 
-// L Bad: Don't create multiple pools
+// Bad: Don't create multiple pools
 const pool1 = WorkerPool.getInstance();
 const pool2 = WorkerPool.getInstance(); // Returns same instance
 ```
 
 ### 2. Set Appropriate Worker Count
 
+Each worker holds its own copy of the speech models (about 115 MB once warm). For streaming speech, one or two workers keep up with real time (see `BENCHMARK.md`); more workers mostly cost memory.
+
 ```typescript
-//  Good: Use hardware concurrency
-const pool = WorkerPool.getInstance(); // Auto-detects CPU cores
+// Good for streaming speech, especially on tablets and kiosks
+const pool = WorkerPool.getInstance(2);
 
-//  Good: Limit workers on low-end devices
-const maxWorkers = Math.min(navigator.hardwareConcurrency || 4, 4);
-const pool = WorkerPool.getInstance(maxWorkers);
-
-// L Bad: Too many workers waste memory
-const pool = WorkerPool.getInstance(100); // Excessive
+// Batch processing of many files on a desktop can use more
+const pool = WorkerPool.getInstance(Math.min(navigator.hardwareConcurrency || 4, 4));
 ```
+
+Keep the pool alive between utterances. Since 1.1.0 each worker builds its speech decoder once and reuses it; destroying the pool throws that work away.
 
 ### 3. Clean Up Resources
 
 ```typescript
-//  Good: Destroy when done
+// Good: Destroy when done
 useEffect(() => {
   const pool = WorkerPool.getInstance();
   pool.init();
@@ -384,7 +384,7 @@ useEffect(() => {
   };
 }, []);
 
-// L Bad: Memory leak
+// Bad: Memory leak
 const pool = WorkerPool.getInstance();
 pool.init();
 // Never destroyed
@@ -393,7 +393,7 @@ pool.init();
 ### 4. Handle Errors
 
 ```typescript
-//  Good: Error handling
+// Good: Error handling
 try {
   const result = await pool.analyze(pcm16);
 } catch (error) {
@@ -401,7 +401,7 @@ try {
   // Show user-friendly error message
 }
 
-// L Bad: Unhandled errors crash app
+// Bad: Unhandled errors crash app
 const result = await pool.analyze(pcm16); // May throw
 ```
 
@@ -484,10 +484,10 @@ await pool.init({
 **Issue:** Workers not faster than main thread
 
 **Checklist:**
-1.  Using `analyzeChunks()` for parallel processing?
-2.  Sufficient worker count (check `getStats()`)?
-3.  Chunks small enough to distribute?
-4.  Dialog text provided for decoder reuse optimization?
+1. Using `analyzeChunks()` for parallel processing?
+2. Sufficient worker count (check `getStats()`)?
+3. Chunks small enough to distribute?
+4. Pool kept alive between utterances (decoders are reused since 1.1.0)?
 
 ---
 
