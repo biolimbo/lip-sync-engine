@@ -535,10 +535,19 @@
     };
 
     let currentMode = 'single';
-    let ready = false;
-    let busy = false; // recording or analyzing
+    let busy = false; // recording, loading, or analyzing
+    // Single Thread needs the main-thread engine; the worker modes need the
+    // pool. Each starts on its own, so one failing leaves the other usable.
+    let startupDone = false; // both startups in init() have finished
+    let engineReady = false;
+    // The library keeps a failed main-thread WASM load, so only a reload
+    // retries it.
+    let engineError = null;
+    let poolReady = false;
+    // A failed pool startup is not kept: selecting a worker mode tries again.
+    let poolError = null;
     // Set when chunked mode's extra workers failed to start. Selecting chunked
-    // mode again tries again (a failed pool startup is not kept).
+    // mode again tries again.
     let warmupError = null;
     let lipSyncEngine = null;
     let workerPool = null;
@@ -570,10 +579,16 @@
       return `${String(err?.message ?? err).replace(/\.+$/, '')}. ${hint}`;
     }
 
-    // Record and Load need the engines loaded and are off while busy or after
-    // the selected mode failed to start. Mode buttons are off while busy.
+    function modeReady() {
+      if (currentMode === 'single') return engineReady;
+      if (currentMode === 'chunked') return poolReady && warmupError === null;
+      return poolReady;
+    }
+
+    // Record and Load need the selected mode started and are off while busy.
+    // Mode buttons are off while busy.
     function updateControls() {
-      const blocked = !ready || busy || (currentMode === 'chunked' && warmupError !== null);
+      const blocked = busy || !modeReady();
       recordBtn.disabled = blocked;
       loadBtn.disabled = blocked;
       modeButtons.forEach(b => { b.disabled = busy; });
@@ -604,24 +619,64 @@
         currentMode = btn.dataset.mode;
         chunkSettings.style.display = currentMode === 'chunked' ? 'block' : 'none';
         workerMetricEl.style.display = currentMode === 'chunked' ? 'flex' : 'none';
-        if (ready) {
-          if (warmupError) {
-            // Leaving chunked mode after its workers failed to start
-            warmupError = null;
-            hideError();
-            setStatus(READY_TEXT, 'success');
-          }
-          if (currentMode === 'chunked') startAllWorkers();
-        }
-        updateControls();
+        warmupError = null; // selecting chunked mode again retries its workers
+        showModeState();
       });
     });
 
+    function failStartup(err, hint) {
+      showError(startupFailureText(err, hint));
+      setStatus('Failed to initialize', 'error');
+    }
+
     function failWarmup(err) {
       warmupError = err;
-      showError(startupFailureText(err, 'Switch modes or reload the page to retry.'));
-      setStatus('Failed to initialize', 'error');
+      failStartup(err, 'Switch modes or reload the page to retry.');
       updateControls();
+    }
+
+    // init() starts the pool's first worker. Concurrent calls share one
+    // startup, and a failed startup can be retried.
+    async function startPool() {
+      poolError = null;
+      try {
+        await workerPool.init({ ...WASM_PATHS, workerScriptUrl: `${DIST}worker.js` });
+        poolReady = true;
+      } catch (err) {
+        poolError = err;
+      }
+    }
+
+    // Show whether the selected mode can run, starting the workers it still
+    // needs. Each call gets a number, so a call that a later mode change
+    // superseded leaves the status alone.
+    let modeStateVersion = 0;
+    async function showModeState() {
+      const version = ++modeStateVersion;
+      updateControls();
+      if (!startupDone) return; // init() calls this when it finishes
+      hideError();
+      const mode = currentMode;
+      if (mode === 'single') {
+        if (engineError) failStartup(engineError, 'Reload the page to retry.');
+        else setStatus(READY_TEXT, 'success');
+        return;
+      }
+      if (!poolReady) {
+        setStatus('Starting worker...', 'analyzing');
+        await startPool();
+        updateControls();
+        if (version !== modeStateVersion) return;
+        if (poolError) {
+          failStartup(poolError, 'Switch modes or reload the page to retry.');
+          return;
+        }
+      }
+      if (mode === 'chunked') {
+        startAllWorkers();
+      } else {
+        setStatus(READY_TEXT, 'success');
+      }
     }
 
     // init() starts one worker; chunked mode needs the rest, which warmup()
@@ -644,28 +699,27 @@
     // Both engines start once and stay alive for the whole page. Create the
     // pool once and reuse it for every analysis.
     async function init() {
+      setStatus('Initializing engines...', 'analyzing');
       try {
-        setStatus('Initializing engines...', 'analyzing');
         ({ LipSyncEngine, WorkerPool, recordAudio, loadAudio } = await import(`${DIST}index.mjs`));
-
-        lipSyncEngine = LipSyncEngine.getInstance();
-        await lipSyncEngine.init(WASM_PATHS);
-
-        workerPool = WorkerPool.getInstance(MAX_WORKERS);
-        await workerPool.init({ ...WASM_PATHS, workerScriptUrl: `${DIST}worker.js` });
-
-        ready = true;
-        updateControls();
-        if (currentMode === 'chunked') {
-          startAllWorkers();
-        } else {
-          setStatus(READY_TEXT, 'success');
-        }
       } catch (err) {
-        // The library keeps a failed WASM load, so only a reload retries it.
-        showError(startupFailureText(err, 'Reload the page to retry.'));
-        setStatus('Failed to initialize', 'error');
+        failStartup(err, 'Reload the page to retry.');
+        return;
       }
+
+      lipSyncEngine = LipSyncEngine.getInstance();
+      try {
+        await lipSyncEngine.init(WASM_PATHS);
+        engineReady = true;
+      } catch (err) {
+        engineError = err;
+      }
+
+      workerPool = WorkerPool.getInstance(MAX_WORKERS);
+      await startPool();
+
+      startupDone = true;
+      showModeState();
     }
 
     function splitIntoChunks(pcm16, chunkDurationSec) {

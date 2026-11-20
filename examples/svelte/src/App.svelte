@@ -13,6 +13,7 @@
 
   let dialogText = '';
   let isRecording = false;
+  let isLoading = false; // decoding an audio file
   let currentViseme = 'X';
   let isPlaying = false;
   let audioBuffer: AudioBuffer | null = null;
@@ -72,7 +73,7 @@
           : 'Switch modes or reload the page to retry.'
       }`
     : '';
-  $: busy = $lipSyncEngineStore.isAnalyzing || isRecording;
+  $: busy = $lipSyncEngineStore.isAnalyzing || isRecording || isLoading;
   // Recording and loading work while the mode starts (analyze() waits for it),
   // but not after the mode failed to start
   $: canAnalyze = !busy && initStatus !== 'failed';
@@ -205,6 +206,7 @@
     lipSyncEngineStore.reset();
     audioBuffer = null;
     let pcm16: Int16Array;
+    isLoading = true;
     try {
       addLog(`Loading ${file.name} (${(file.size / 1024).toFixed(2)} KB)...`);
       const loaded = await loadAudio(file);
@@ -214,6 +216,8 @@
     } catch (err) {
       addLog(`Could not load the file: ${errorMessage(err)}`, 'error');
       return;
+    } finally {
+      isLoading = false;
     }
     await runAnalysis(pcm16);
   }
@@ -321,7 +325,7 @@
       <small>
         {$lipSyncEngineStore.mode === 'chunked'
           ? 'Chunks are analyzed alone: smaller chunks run more in parallel but lose accuracy at the edges'
-          : 'Each chunk is analyzed with 500 ms of audio before and after it'}
+          : 'Chunks are analyzed with up to 500 ms of audio before and after them'}
       </small>
     </div>
   {/if}
@@ -361,10 +365,11 @@
     class="status"
     class:recording={isRecording}
     class:failed={!busy && initStatus === 'failed'}
-    class:analyzing={$lipSyncEngineStore.isAnalyzing || (!isRecording && initStatus === 'initializing')}
+    class:analyzing={$lipSyncEngineStore.isAnalyzing || isLoading || (!isRecording && initStatus === 'initializing')}
   >
     {isRecording ? 'Recording. Speak now.'
       : $lipSyncEngineStore.isAnalyzing ? 'Analyzing audio...'
+      : isLoading ? 'Loading audio file...'
       : initStatus === 'failed' ? 'Failed to initialize'
       : initStatus === 'stopped' ? 'Stopped (starts on next analysis)'
       : initStatus === 'initializing' ? 'Initializing...'

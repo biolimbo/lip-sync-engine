@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
 import { recordAudio, loadAudio } from 'lip-sync-engine';
 import type { MouthCue } from 'lip-sync-engine';
-import { useLipSyncEngine } from './composables/useLipSyncEngine';
+import { useLipSyncEngine, StartupError } from './composables/useLipSyncEngine';
 import type { ExecutionMode } from './composables/useLipSyncEngine';
 
 interface LogEntry {
@@ -30,13 +30,15 @@ const {
 
 const dialogText = ref('');
 const isRecording = ref(false);
+const isLoading = ref(false); // decoding an audio file
 const currentViseme = ref('X');
 const isPlaying = ref(false);
 const audioBuffer = ref<AudioBuffer | null>(null);
 const logs = ref<LogEntry[]>([]);
 const logsEnd = ref<HTMLElement | null>(null);
-const isBusy = computed(() => isAnalyzing.value || isRecording.value);
-// Recording and loading need a started mode; switching modes stays possible
+const isBusy = computed(() => isAnalyzing.value || isRecording.value || isLoading.value);
+// Recording and loading work while the mode starts (analyze() waits for it),
+// but not after the mode failed to start.
 const canAnalyze = computed(() => !isBusy.value && !initError.value);
 // One AudioContext for all playback, closed on unmount
 let audioContext: AudioContext | null = null;
@@ -79,6 +81,7 @@ const initErrorMessage = computed(() => {
 const statusText = computed(() => {
   if (isRecording.value) return 'Recording. Speak now.';
   if (isAnalyzing.value) return 'Analyzing audio...';
+  if (isLoading.value) return 'Loading audio file...';
   if (initError.value) return 'Failed to initialize';
   if (!isInitialized.value) return 'Initializing...';
   return 'Ready to analyze audio';
@@ -185,7 +188,7 @@ const runAnalysis = async (pcm16: Int16Array) => {
     if (m) addLog(`Analyzed in ${Math.round(m.executionTime)} ms: ${m.cuesCount} cues (${name})`, 'success');
   } catch (err) {
     // A startup failure is already logged by the initError watcher
-    if (err !== initError.value) addLog(`Analysis failed: ${errorMessage(err)}`, 'error');
+    if (!(err instanceof StartupError)) addLog(`Analysis failed: ${errorMessage(err)}`, 'error');
   }
 };
 
@@ -223,6 +226,7 @@ const handleFileUpload = async (event: Event) => {
   audioBuffer.value = null;
 
   let pcm16: Int16Array;
+  isLoading.value = true;
   try {
     addLog(`Loading ${file.name} (${(file.size / 1024).toFixed(2)} KB)...`);
     const decoded = await loadAudio(file);
@@ -232,6 +236,8 @@ const handleFileUpload = async (event: Event) => {
   } catch (err) {
     addLog(`File load failed: ${errorMessage(err)}`, 'error');
     return;
+  } finally {
+    isLoading.value = false;
   }
 
   await runAnalysis(pcm16);
@@ -313,7 +319,7 @@ watch(result, (newResult) => {
         <small>
           {{ mode === 'chunked'
             ? 'Chunks are analyzed alone: smaller chunks run more in parallel but lose accuracy at the edges'
-            : 'Each chunk is analyzed with 500 ms of audio before and after it' }}
+            : 'Chunks are analyzed with up to 500 ms of audio before and after them' }}
         </small>
       </div>
 
@@ -348,7 +354,7 @@ watch(result, (newResult) => {
         </label>
       </div>
 
-      <div :class="['status', { recording: isRecording, analyzing: isAnalyzing || (!isInitialized && !initError), failed: !!initError && !isBusy }]">
+      <div :class="['status', { recording: isRecording, analyzing: isAnalyzing || isLoading || (!isInitialized && !initError), failed: !!initError && !isBusy }]">
         {{ statusText }}
       </div>
 

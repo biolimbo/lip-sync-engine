@@ -38,7 +38,7 @@ The store creates one pool of up to 4 workers, shares it across modes and analys
 
 ## Streaming
 
-Streaming mode analyzes each chunk with 500 ms of audio before and after it (`contextMs: 500, lookaheadMs: 500`); see [Context and Lookahead](../../docs/streaming-analysis.md#context-and-lookahead).
+Streaming mode analyzes chunks with up to 500 ms of audio before and after them (`contextMs: 500, lookaheadMs: 500`); see [Context and Lookahead](../../docs/streaming-analysis.md#context-and-lookahead).
 
 ## Project Structure
 
@@ -99,7 +99,7 @@ Selecting a mode starts what it needs: the engine for Single Thread, one worker 
 
 `analyze()` resolves with the result. It throws on failure: it sets `initError` (and throws a `StartupError`) when the selected mode fails to start, and sets `error` when the analysis itself fails. The library keeps a failed WASM load, so after a Single Thread failure reload the page to retry. A worker pool that failed to start tries again when a worker mode is selected again, so for the worker modes switch modes or reload the page.
 
-`lipSyncEngineStore.destroy()` frees the engine and the workers when the app no longer needs them. It sets `stopped` in the store, and the next `analyze()` or mode change starts the selected mode again.
+`lipSyncEngineStore.destroy()` releases the main-thread engine and terminates the workers when the app no longer needs them. It calls `LipSyncEngine.destroy()` and `WasmLoader.reset()` (`WasmLoader` keeps the loaded WASM module until it is reset), so the next `init()` loads the module again. It sets `stopped` in the store, and the next `analyze()` or mode change starts the selected mode again.
 
 ### Mouth Shape Animation
 

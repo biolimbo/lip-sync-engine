@@ -158,8 +158,9 @@ export function useLipSyncEngine() {
           chunksProcessed = chunks.length;
 
         } else {
-          // Each chunk is analyzed with 500 ms of audio before and after it,
-          // and only its own cues are returned (times relative to the chunk).
+          // Chunks are analyzed with up to 500 ms of audio before and after
+          // them, and only each chunk's own cues are returned (times relative
+          // to the chunk).
           const stream = WorkerPool.getInstance(MAX_WORKERS).createStreamAnalyzer({
             ...options,
             sampleRate,

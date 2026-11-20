@@ -52,6 +52,7 @@ function App() {
 
   const [dialogText, setDialogText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // decoding an audio file
   const [currentViseme, setCurrentViseme] = useState('X');
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
@@ -63,7 +64,7 @@ function App() {
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
 
-  const busy = isAnalyzing || isRecording;
+  const busy = isAnalyzing || isRecording || isLoading;
   // Recording and loading work while the mode starts (analyze() waits for it),
   // but not after the mode failed to start
   const canAnalyze = !busy && !initError;
@@ -203,12 +204,16 @@ function App() {
     if (!file) return;
 
     startOver();
+    setIsLoading(true);
     let audio: Awaited<ReturnType<typeof loadAudio>>;
     try {
+      addLog(`Loading ${file.name}...`);
       audio = await loadAudio(file);
     } catch (err) {
       addLog(`Could not load ${file.name}: ${errorMessage(err)}`, 'error');
       return;
+    } finally {
+      setIsLoading(false);
     }
     addLog(`Loaded ${file.name} (${seconds(audio.pcm16)} s)`);
     await runAnalysis(audio.pcm16, audio.audioBuffer);
@@ -228,12 +233,13 @@ function App() {
   }, [result]);
 
   const statusClass = isRecording ? 'recording'
-    : isAnalyzing ? 'analyzing'
+    : isAnalyzing || isLoading ? 'analyzing'
     : initError ? 'error'
     : !isInitialized ? 'analyzing'
     : '';
   const statusText = isRecording ? 'Recording. Speak now.'
     : isAnalyzing ? 'Analyzing audio...'
+    : isLoading ? 'Loading audio file...'
     : initError ? 'Failed to initialize'
     : !isInitialized ? 'Initializing...'
     : 'Ready to analyze audio';
@@ -296,7 +302,7 @@ function App() {
             <small>
               {mode === 'chunked'
                 ? 'Chunks are analyzed alone: smaller chunks run more in parallel but lose accuracy at the edges'
-                : 'Each chunk is analyzed with 500 ms of audio before and after it'}
+                : 'Chunks are analyzed with up to 500 ms of audio before and after them'}
             </small>
           </div>
         )}

@@ -47,6 +47,17 @@ async function prepare(mode: ExecutionMode): Promise<void> {
   if (mode === 'chunked' || mode === 'streaming') await pool.warmup();
 }
 
+/**
+ * Thrown by analyze() when the selected mode fails to start. The failure is
+ * also reported as `initError`, so callers need not show it again.
+ */
+export class StartupError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StartupError';
+  }
+}
+
 function splitIntoChunks(pcm16: Int16Array, chunkSeconds: number, sampleRate: number): Int16Array[] {
   const chunkSamples = Math.round(chunkSeconds * sampleRate);
   const chunks: Int16Array[] = [];
@@ -106,7 +117,11 @@ export function useLipSyncEngine() {
     { immediate: true }
   );
 
-  /** Analyze 16-bit PCM audio in the selected mode. Throws on failure (and sets error or initError). */
+  /**
+   * Analyze 16-bit PCM audio in the selected mode. Throws StartupError (and
+   * sets initError) when the mode fails to start, or the analysis error (and
+   * sets error) when the analysis fails.
+   */
   const analyze = async (pcm16: Int16Array, options: LipSyncEngineOptions = {}) => {
     isAnalyzing.value = true;
     error.value = null;
@@ -119,8 +134,10 @@ export function useLipSyncEngine() {
       try {
         await prepare(currentMode);
       } catch (err) {
-        initError.value = toError(err);
-        throw initError.value;
+        const e = toError(err);
+        // A pool destroyed elsewhere during startup is teardown, not a failure
+        if (!(err instanceof WorkerPoolDestroyedError)) initError.value = e;
+        throw new StartupError(e.message);
       }
       initError.value = null;
       isInitialized.value = true;
@@ -165,9 +182,9 @@ export function useLipSyncEngine() {
         };
 
       } else {
-        // Streaming with the recommended settings: each chunk is analyzed with
-        // 500 ms of audio before and after it, and only its own cues are
-        // returned (times relative to the chunk).
+        // Streaming with the recommended settings: chunks are analyzed with up
+        // to 500 ms of audio before and after them, and only each chunk's own
+        // cues are returned (times relative to the chunk).
         const pool = WorkerPool.getInstance(MAX_WORKERS);
         const stream = pool.createStreamAnalyzer({
           ...options,
@@ -197,7 +214,7 @@ export function useLipSyncEngine() {
       metrics.value = performanceMetrics;
     } catch (err) {
       const e = toError(err);
-      if (e !== initError.value) error.value = e;
+      if (!(e instanceof StartupError)) error.value = e;
       throw e;
     } finally {
       isAnalyzing.value = false;

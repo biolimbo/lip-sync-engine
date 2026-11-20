@@ -37,7 +37,7 @@ This example creates one pool of up to 4 workers, shares it across all modes and
 
 ## Streaming
 
-Streaming mode analyzes each chunk with 500 ms of audio before and after it, the recommended settings. See [Context and Lookahead](../../docs/streaming-analysis.md#context-and-lookahead) for how these settings work, and [`../stream-example.ts`](../stream-example.ts) for WebSocket and microphone sources.
+Streaming mode analyzes chunks with up to 500 ms of audio before and after them (`contextMs: 500, lookaheadMs: 500`, the recommended settings). See [Context and Lookahead](../../docs/streaming-analysis.md#context-and-lookahead) for how these settings work, and [`../stream-example.ts`](../stream-example.ts) for WebSocket and microphone sources.
 
 ## Project Structure
 
@@ -93,7 +93,7 @@ const handleRecord = async () => {
 
 Selecting a mode starts what it needs: the engine for Single Thread, one worker for Web Worker, and all workers for Chunked and Streaming. `isInitialized` turns true when that startup finishes. `analyze()` also starts the mode if needed, so recording can begin while the mode is still starting.
 
-`analyze()` throws on failure. It sets `initError` when the selected mode fails to start and `error` when the analysis itself fails. The library keeps a failed WASM load, so after a Single Thread failure reload the page to retry. A worker pool that failed to start tries again when a worker mode is selected again, so for the worker modes switch modes or reload the page.
+`analyze()` throws on failure: it sets `initError` (and throws a `StartupError`) when the selected mode fails to start, and sets `error` when the analysis itself fails. The library keeps a failed WASM load, so after a Single Thread failure reload the page to retry. A worker pool that failed to start tries again when a worker mode is selected again, so for the worker modes switch modes or reload the page.
 
 ### Mouth Shape Animation
 

@@ -1,5 +1,5 @@
 import { writable, get } from 'svelte/store';
-import { LipSyncEngine, WorkerPool, WorkerPoolDestroyedError } from 'lip-sync-engine';
+import { LipSyncEngine, WasmLoader, WorkerPool, WorkerPoolDestroyedError } from 'lip-sync-engine';
 import type { LipSyncEngineResult, LipSyncEngineOptions, MouthCue } from 'lip-sync-engine';
 
 export type ExecutionMode = 'single' | 'worker' | 'chunked' | 'streaming';
@@ -239,9 +239,9 @@ function createLipSyncEngineStore() {
           };
 
         } else {
-          // Streaming with the recommended settings. Each chunk is analyzed
-          // with 500 ms of audio before and after it and only its own cues are
-          // returned (times relative to the chunk). Short chunks analyzed
+          // Streaming with the recommended settings. Chunks are analyzed with
+          // up to 500 ms of audio before and after them, and only each chunk's
+          // own cues are returned (times relative to the chunk). Short chunks analyzed
           // alone lose most of their mouth shapes.
           const stream = WorkerPool.getInstance(MAX_WORKERS).createStreamAnalyzer({
             ...options,
@@ -313,13 +313,16 @@ function createLipSyncEngineStore() {
     },
 
     /**
-     * Free the engine and terminate the workers (only when lip sync is no
-     * longer needed). Sets `stopped`; the next analyze() or mode change
-     * starts the selected mode again.
+     * Release the main-thread engine and its WASM module, and terminate the
+     * workers (only when lip sync is no longer needed). WasmLoader keeps the
+     * loaded module until reset(), so reset it too and the next init() loads
+     * it again. Sets `stopped`; the next analyze() or mode change starts the
+     * selected mode again.
      */
     destroy: () => {
       startId++; // ignore startups still in flight
       LipSyncEngine.getInstance().destroy();
+      WasmLoader.reset();
       WorkerPool.getInstance().destroy();
       update((state) => ({ ...state, isInitialized: false, initError: null, stopped: true }));
     },
