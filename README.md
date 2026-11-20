@@ -51,25 +51,13 @@ for (const cue of result.mouthCues) {
 // ...
 ```
 
-`analyze()` runs on the main thread and blocks the page while it works. For interactive pages, use
-`analyzeAsync()` or `WorkerPool`, which run the analysis in a Web Worker (see
-[API Overview](#api-overview)).
+`analyze()` blocks the page while it runs. For interactive pages, use `analyzeAsync()` or
+`WorkerPool` instead (see [Why Use Workers?](./docs/worker-usage.md#why-use-workers)).
 
-React, Vue and Svelte integration is covered in
+React, Vue, and Svelte integration is covered in
 [Getting Started: Framework Integration](./docs/getting-started.md#framework-integration). Runnable
-apps are in [Examples](#examples).
-
-## Upgrading from 1.x
-
-- Results use nine mouth shapes by default. If your character only has art for A-F, pass
-  `extendedShapes: ''`.
-- Create one `WorkerPool` and keep it for the whole session instead of destroying it after each
-  utterance. Each worker keeps its speech decoder between calls, so reusing a pool is much faster
-  than starting a new one.
-- `WorkerPool.destroy()` rejects pending `init()`, `warmup()` and analysis promises with
-  `WorkerPoolDestroyedError`. Check for it with `instanceof` and ignore it in cleanup code.
-
-See [CHANGELOG.md](./CHANGELOG.md) for the full list of changes.
+apps are in [Examples](#examples). To upgrade from an earlier major version, see
+[CHANGELOG.md](./CHANGELOG.md).
 
 ## Loading the WASM Files
 
@@ -88,19 +76,19 @@ Security Policy blocks unpkg.com, see
 
 ## Mouth Shapes
 
-A-F are the basic Hanna-Barbera mouth shapes. G, H and X are Rhubarb's extended shapes.
+A-F are the basic Hanna-Barbera mouth shapes. G, H, and X are Rhubarb's extended shapes.
 
 | Shape | Image | Description | Example Sounds |
 |-------|-------|-------------|----------------|
-| A | <img src="examples/assets/visemes/A.png" width="100"> | Closed | m, b, p |
-| B | <img src="examples/assets/visemes/B.png" width="100"> | Clenched teeth | most consonants, ee as in b**ee** |
-| C | <img src="examples/assets/visemes/C.png" width="100"> | Open | e as in m**e**n, u as in s**u**n |
-| D | <img src="examples/assets/visemes/D.png" width="100"> | Wide open | a as in f**a**ther, b**a**t |
-| E | <img src="examples/assets/visemes/E.png" width="100"> | Rounded | o as in **o**ff |
-| F | <img src="examples/assets/visemes/F.png" width="100"> | Puckered | y**ou**, b**oy**, **w**ay |
-| G | <img src="examples/assets/visemes/G.png" width="100"> | F/V (upper teeth on lower lip) | f, v |
-| H | <img src="examples/assets/visemes/H.png" width="100"> | L (tongue raised) | long l |
-| X | <img src="examples/assets/visemes/X.png" width="100"> | Idle | silence |
+| A | <img src="examples/assets/visemes/A.png" width="100"> | Closed (M, B, P) | **m**ap, **b**ig, **p**ot |
+| B | <img src="examples/assets/visemes/B.png" width="100"> | Clenched teeth | most consonants, such as **s**, **t**, and **k**; ee as in b**ee** |
+| C | <img src="examples/assets/visemes/C.png" width="100"> | Open | e as in m**e**n, a as in b**a**t |
+| D | <img src="examples/assets/visemes/D.png" width="100"> | Wide open | a as in f**a**ther |
+| E | <img src="examples/assets/visemes/E.png" width="100"> | Rounded | o as in **o**ff, er as in h**er** |
+| F | <img src="examples/assets/visemes/F.png" width="100"> | Puckered | oo as in y**ou**, w as in **w**ay |
+| G | <img src="examples/assets/visemes/G.png" width="100"> | F/V (upper teeth on lower lip) | **f**an, **v**an |
+| H | <img src="examples/assets/visemes/H.png" width="100"> | L (tongue raised) | a held l, as in **l**ong |
+| X | <img src="examples/assets/visemes/X.png" width="100"> | Idle | silence and pauses |
 
 The `extendedShapes` option selects which extended shapes appear. The default is `'GHX'` (all
 nine). Pass `''` for A-F only, or any subset such as `'X'`:
@@ -118,22 +106,24 @@ const result = await analyze(pcm16, { sampleRate: 16000, extendedShapes: '' }); 
    timing. Dialog text, when given, guides the recognizer.
 2. **Shape mapping.** The phones are mapped to [mouth shapes](#mouth-shapes).
 3. **Animation rules.** Rhubarb's rules adjust the shapes and timing for natural transitions.
-4. **Output.** The result is a list of mouth cues, each with a start time, an end time and a shape.
+4. **Output.** The result is a list of mouth cues, each with a start time, an end time, and a shape.
 
 ## Streaming Quality
 
-Short chunks analyzed one at a time lose most mouth shapes and close the mouth at chunk boundaries.
-With `contextMs: 500, lookaheadMs: 500`, chunks of 100 ms to 1000 ms reach 85-90% agreement with
-whole-utterance analysis (32-68% when analyzed alone), and false closures at chunk boundaries drop
-to about 2% of frames. Method, cost and the phonetic recognizer trade-off are in [BENCHMARK.md](./BENCHMARK.md).
+Short chunks analyzed one at a time lose most mouth shapes and often close the mouth at chunk
+boundaries. With 250 to 1000 ms chunks, about 32-65% of frames match a whole-utterance analysis when
+each chunk is analyzed alone, and 85-86% with `contextMs` and `lookaheadMs` at 500. See
+[Context and Lookahead](./docs/streaming-analysis.md#context-and-lookahead) for usage, and
+[BENCHMARK.md](./BENCHMARK.md#mouth-cue-quality) for the method, cost, and the phonetic recognizer
+trade-off.
 
 ## How It Compares to Other Browser Lip-Sync Libraries
 
 Against hand-checked phone timings, `lip-sync-engine` with context and lookahead scored 54.6%
 balanced accuracy over five mouth classes, against 42.5% for HeadAudio and 42.1% for wlipsync, and
-showed closed lips for 92% of m, b and p sounds (under half for the others). HeadAudio and wlipsync
-use far less CPU, have no start-up cost, and run with about 30 to 40 ms of delay. Setup, per-class results and
-limits are in
+showed closed lips for 92% of m, b, and p sounds (under half for the others). HeadAudio and wlipsync
+use far less CPU, have no start-up cost, and run with about 30 to 40 ms of delay. Setup, per-class
+results, and limits are in
 [BENCHMARK.md](./BENCHMARK.md#head-to-head-with-other-browser-lip-sync-libraries).
 
 ## API Overview
@@ -166,7 +156,7 @@ import { WorkerPool } from 'lip-sync-engine';
 import type { MouthCue } from 'lip-sync-engine';
 
 // Create the pool once and keep it for the whole session.
-// Each worker uses about 115 MB, so 2 workers are enough for one voice.
+// Two workers are enough for one voice; each uses about 115 MB.
 const pool = WorkerPool.getInstance(2);
 await pool.init();   // starts the first worker and builds its speech decoder
 await pool.warmup(); // starts the remaining workers
@@ -186,8 +176,9 @@ async function lipSyncUtterance(
   for await (const chunk of audioStream) {
     const index = stream.addChunk(chunk); // returns at once
     done.push(
-      // Cue times are relative to the start of this chunk
-      stream.getResult(index).then((result) => onCues(index, result.mouthCues))
+      stream.getResult(index)
+        .then((result) => onCues(index, result.mouthCues)) // times relative to this chunk
+        .catch((error: unknown) => console.error(`Chunk ${index} failed:`, error))
     );
   }
 
@@ -196,11 +187,8 @@ async function lipSyncUtterance(
 }
 ```
 
-The first chunk is analyzed at once, without lookahead, so time to first audio does not grow
-(`firstChunkLookahead: true` changes this). Later chunks wait for up to `lookaheadMs` of following
-audio, but never past their estimated playback time. With `contextMs` and `lookaheadMs` at `0` (the
-default), each chunk is analyzed alone as soon as it is added. `finalize()` waits for every chunk
-and returns all results in order.
+How the analyzer schedules chunks, and when to change the defaults, is covered in
+[Context and Lookahead](./docs/streaming-analysis.md#context-and-lookahead).
 
 Other pool options (all optional):
 
@@ -214,7 +202,8 @@ await pool.init({
   recognizer: 'pocketsphinx' // default; 'phonetic' is faster but less accurate and ignores dialogText
 });
 
-const { workers, totalBytes } = await pool.getMemoryStats(); // WebAssembly memory per worker, in bytes
+// Reserved WebAssembly memory per worker, in bytes (can exceed the memory actually in use)
+const { workers, totalBytes } = await pool.getMemoryStats();
 ```
 
 See the [Streaming Analysis Guide](./docs/streaming-analysis.md) and the
@@ -255,7 +244,9 @@ interface MouthCue {
 
 interface LipSyncEngineResult {
   mouthCues: MouthCue[]; // always present
-  metadata?: {           // set by LipSyncEngine.analyze() and analyze(); worker results may omit it
+  // Set as shown only by analyze(). Worker and stream results carry different
+  // metadata, so rely on mouthCues.
+  metadata?: {
     duration: number;
     sampleRate: number;
     dialogText?: string;
@@ -267,26 +258,14 @@ interface LipSyncEngineOptions {
   sampleRate?: number;     // sample rate of the buffer you pass (default 16000)
   extendedShapes?: string; // default 'GHX' (nine shapes); '' for A-F only
 }
-
-interface StreamAnalyzerOptions extends LipSyncEngineOptions {
-  contextMs?: number;            // default 0; recommended 500
-  lookaheadMs?: number;          // default 0; recommended 500
-  firstChunkLookahead?: boolean; // default false
-  deadlineMarginMs?: number;     // default 150
-  maxWaitMs?: number;            // default 2000
-  maxConcurrent?: number;        // default 2
-  maxBatchMs?: number;           // default 3000
-}
-
-type PrewarmMode = boolean | 'first';
-type RecognizerKind = 'pocketsphinx' | 'phonetic';
 ```
 
-See the [API Reference](./docs/api-reference.md) for every class, option and error.
+Streaming options (`StreamAnalyzerOptions`), the pool types, and every other class, option, and
+error are in the [API Reference](./docs/api-reference.md).
 
 ## Development
 
-Building from source, running the tests and testing against the examples are covered in the
+Building from source, running the tests, and testing against the examples are covered in the
 [Development Guide](./docs/development.md).
 
 ## License

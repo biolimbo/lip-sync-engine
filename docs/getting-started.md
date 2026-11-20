@@ -76,9 +76,9 @@ for (const cue of result.mouthCues) {
 }
 
 // Example output:
-// 0.00-0.35 s: X  (idle, before speech)
-// 0.35-0.50 s: D  (wide open)
-// 0.50-0.85 s: B  (clenched teeth)
+// 0.00-0.35 s: X  (Idle, before speech)
+// 0.35-0.50 s: D  (Wide open)
+// 0.50-0.85 s: B  (Clenched teeth)
 // ...
 ```
 
@@ -88,14 +88,14 @@ for (const cue of result.mouthCues) {
 
 `result.mouthCues` is an array of timed mouth shapes. Each cue has a `start` and `end` time in
 seconds and a `value`, which is one of nine shapes: `A` Closed (M, B, P), `B` Clenched teeth, `C`
-Open, `D` Wide open, `E` Rounded, `F` Puckered, `G` F/V, `H` L, and `X` Idle. Pass
-`extendedShapes: ''` to get only A-F. See [Mouth Shapes](../README.md#mouth-shapes) for images of
+Open, `D` Wide open, `E` Rounded, `F` Puckered, `G` F/V (upper teeth on lower lip), `H` L (tongue
+raised), and `X` Idle. Pass `extendedShapes: ''` to get only A-F. See [Mouth Shapes](../README.md#mouth-shapes) for images of
 each shape.
 
 ### 4. Analyze Without Blocking the UI
 
-`analyze()` runs on the main thread, and the page does not respond while it works. In interactive
-pages, run the analysis in a Web Worker instead:
+`analyze()` blocks the page while it runs. In interactive pages, use `analyzeAsync()`, which runs
+the same analysis in a Web Worker (see [Why Use Workers?](./worker-usage.md#why-use-workers)):
 
 ```typescript
 import { analyzeAsync, recordAudio } from 'lip-sync-engine';
@@ -284,9 +284,9 @@ const withoutText = await analyze(pcm16);
 
 ### 2. Pass the Buffer's Real Sample Rate
 
-The engine resamples audio to 16 kHz internally. Set `sampleRate` to the rate of the buffer you
-pass (default 16000). Audio below 16 kHz is rejected with an "Upsampling not supported" error.
-`recordAudio()` and `loadAudio()` return 16 kHz audio by default.
+Set `sampleRate` to the rate of the buffer you pass (default 16000). Higher rates are converted down
+to 16 kHz internally. Rates below 16 kHz are not supported: the analysis fails with an
+`Analysis error: ...` message. `recordAudio()` and `loadAudio()` return 16 kHz audio by default.
 
 ```typescript
 import { analyze, recordAudio } from 'lip-sync-engine';
@@ -334,8 +334,7 @@ WasmLoader.reset();                    // optional: lets the cached WASM module 
 
 Without `WasmLoader.reset()`, the WASM module stays cached and a later `init()` is fast. For
 `WorkerPool`, see
-[Pool Lifecycle and Sizing](./worker-usage.md#pool-lifecycle-and-sizing). More recommendations are
-in the [API Reference](./api-reference.md#best-practices).
+[Pool Lifecycle and Sizing](./worker-usage.md#pool-lifecycle-and-sizing).
 
 ## Self-Hosting the WASM Files
 
@@ -351,7 +350,7 @@ blocks it, or when the app must work offline or on an internal network.
    cp node_modules/lip-sync-engine/dist/wasm/* node_modules/lip-sync-engine/dist/worker.js public/lip-sync-engine/
    ```
 
-   `dist/wasm/` contains `lip-sync-engine.js`, `lip-sync-engine.wasm` and `lip-sync-engine.data`.
+   `dist/wasm/` contains `lip-sync-engine.js`, `lip-sync-engine.wasm`, and `lip-sync-engine.data`.
    Copy the files again whenever you upgrade the package.
 
 2. Pass the paths to `LipSyncEngine.init()` before any `analyze()` call. `analyze()` loads the
@@ -381,8 +380,9 @@ await WorkerPool.getInstance(2).init({
 ```
 
 Use root-relative paths (starting with `/`) or full URLs. If the files are on another origin, that
-server must send CORS headers (`Access-Control-Allow-Origin`) for them. If loading fails, the
-failure is cached for the page: fix the paths, then reload the page to retry.
+server must send CORS headers (`Access-Control-Allow-Origin`) for them. If `LipSyncEngine` fails to
+load the files, the failure is cached for the page: fix the paths, then reload the page to retry. A
+failed `WorkerPool.init()` is not cached: fix the paths and call `init()` again.
 
 ## Common Issues
 
@@ -420,8 +420,8 @@ If the mouth shapes do not match the speech:
 
 ## Next Steps
 
-- [API Reference](./api-reference.md): every class, option and error
+- [API Reference](./api-reference.md): every class, option, and error
 - [Web Worker Usage Guide](./worker-usage.md): non-blocking and parallel analysis with `WorkerPool`
 - [Streaming Analysis Guide](./streaming-analysis.md): lip sync for live or streamed audio
-- [Examples](../examples/): vanilla JavaScript, React, Vue and Svelte apps
+- [Examples](../examples/): vanilla JavaScript, React, Vue, and Svelte apps
 - [Mouth Shapes](../README.md#mouth-shapes): images of each shape

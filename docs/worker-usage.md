@@ -9,12 +9,11 @@ How to run lip-sync-engine analysis in Web Workers with `WorkerPool`, so the pag
 3. [Pool Lifecycle and Sizing](#pool-lifecycle-and-sizing)
 4. [Basic Usage](#basic-usage)
 5. [Chunked Processing](#chunked-processing)
-6. [Performance](#performance)
-7. [Framework Integration](#framework-integration)
-8. [Best Practices](#best-practices)
-9. [Troubleshooting](#troubleshooting)
-10. [Advanced Usage](#advanced-usage)
-11. [See Also](#see-also)
+6. [Framework Integration](#framework-integration)
+7. [Best Practices](#best-practices)
+8. [Troubleshooting](#troubleshooting)
+9. [Advanced Usage](#advanced-usage)
+10. [See Also](#see-also)
 
 ---
 
@@ -38,37 +37,7 @@ console.log(result.mouthCues);
 
 ## Why Use Workers?
 
-### Problem: UI Blocking
-
-`analyze()` runs on the main thread, so the page cannot respond while it works:
-
-```typescript
-import { analyze, loadAudio } from 'lip-sync-engine';
-
-const { pcm16 } = await loadAudio('/speech.wav');
-const result = await analyze(pcm16); // the UI is frozen until this returns
-```
-
-### Solution: Web Workers
-
-`WorkerPool` runs the same analysis in Web Workers, so the main thread stays free:
-
-```typescript
-import { WorkerPool, loadAudio } from 'lip-sync-engine';
-
-const pool = WorkerPool.getInstance(2);
-await pool.init();
-
-const { pcm16 } = await loadAudio('/speech.wav');
-const result = await pool.analyze(pcm16); // the UI stays interactive
-```
-
-### Benefits
-
-| Feature | Main Thread | Web Workers |
-|---------|-------------|-------------|
-| **UI Responsiveness** | Freezes during analysis | Responsive |
-| **Parallel Processing** | One job at a time | One job per started worker |
+`analyze()` runs on the main thread, so the page cannot render or respond to input until it returns. `WorkerPool`, and `analyzeAsync()`, which uses it, run the same analysis in Web Workers: the page stays responsive, and independent jobs run in parallel, one per started worker, limited by the CPU cores. The analysis costs the same CPU either way: about 0.2 to 0.4 s per second of audio once a worker's speech decoder is built ([BENCHMARK.md](../BENCHMARK.md)).
 
 ---
 
@@ -76,7 +45,7 @@ const result = await pool.analyze(pcm16); // the UI stays interactive
 
 ### Keep the Pool for the Session
 
-Create the pool once, when the app first needs lip-sync, and reuse it for every utterance. Each worker builds its speech decoder (about 0.5 s of CPU) during `init()`/`warmup()` and keeps it, so a warm pool returns the first cues of a new utterance in about 0.1 s. Destroying and re-creating the pool per utterance pays the start-up cost again every time. Call `pool.destroy()` only when the app is done with lip-sync for good, for example on app teardown.
+Create the pool once, when the app first needs lip sync, and reuse it for every utterance. Each worker builds its speech decoder (about 0.5 s of CPU) during `init()`/`warmup()` and keeps it, so a warm pool returns the first cues of a new utterance in about 0.1 s. Destroying and re-creating the pool per utterance pays the start-up cost again every time. Call `pool.destroy()` only when the app is done with lip sync for good, for example on app teardown.
 
 - `init()` starts one worker.
 - `warmup()` (after `init()` resolves) starts the rest, up to `maxWorkers`. The pool never adds workers on demand, so call `warmup()` before any parallel work (chunked jobs, or streams with more than one analysis at a time).
@@ -113,7 +82,7 @@ const pool = WorkerPool.getInstance(workerCountForDevice());
 - A warm worker uses about **115 MB**.
 - That includes its own copy of the **39 MB** model file. After the first worker downloads it, later workers normally read it from the browser's HTTP cache.
 - With `shareAssets: true` (the default), the `.wasm` file is compiled once and the compiled module is shared with later workers.
-- `pool.getMemoryStats()` reports each worker's WebAssembly memory (see the [API Reference](./api-reference.md#workerpool)).
+- `pool.getMemoryStats()` reports the WebAssembly memory each worker has reserved (at least 128 MiB each), which can be more than it actually uses. Use it to watch for growth, not to measure total memory (see [`getMemoryStats()`](./api-reference.md#getmemorystats)).
 
 To use less memory, see [Memory Issues](#memory-issues).
 
@@ -147,7 +116,7 @@ const pool = WorkerPool.getInstance(2);
 await pool.init();
 ```
 
-To serve the files yourself, pass `wasmPath`, `dataPath`, `jsPath` and `workerScriptUrl` to `init()`. See [Self-Hosting the WASM Files](./getting-started.md#self-hosting-the-wasm-files).
+To serve the files yourself, pass `wasmPath`, `dataPath`, `jsPath`, and `workerScriptUrl` to `init()`. See [Self-Hosting the WASM Files](./getting-started.md#self-hosting-the-wasm-files).
 
 ### 2. Analyze Audio
 
@@ -173,11 +142,15 @@ result.mouthCues.forEach(cue => {
 ### 3. Clean Up
 
 ```typescript
-// Only when the app is done with lip-sync (for example on app teardown)
+import type { WorkerPool } from 'lip-sync-engine';
+
+declare const pool: WorkerPool; // the pool from the steps above
+
+// Only when the app is done with lip sync (for example on app teardown)
 pool.destroy();
 ```
 
-Pending `init()`, `warmup()` and analysis promises then reject with [`WorkerPoolDestroyedError`](./api-reference.md#workerpooldestroyederror).
+Pending `init()`, `warmup()`, and analysis promises then reject with [`WorkerPoolDestroyedError`](./api-reference.md#workerpooldestroyederror).
 
 ---
 
@@ -211,6 +184,9 @@ function splitAudioIntoChunks(
 ```typescript
 import { WorkerPool, loadAudio } from 'lip-sync-engine';
 
+// From Split Audio into Chunks above
+declare function splitAudioIntoChunks(audio: Int16Array, chunkDurationSeconds: number, sampleRate?: number): Int16Array[];
+
 const pool = WorkerPool.getInstance(4);
 await pool.init();
 await pool.warmup(); // init() starts only one worker; this starts the other three
@@ -233,6 +209,10 @@ Cue times in each result start at 0 at the start of its chunk. Add each chunk's 
 ```typescript
 import type { LipSyncEngineResult, MouthCue } from 'lip-sync-engine';
 
+// From Process Chunks in Parallel above
+declare const results: LipSyncEngineResult[];
+declare const chunks: Int16Array[];
+
 function combineCues(
   results: LipSyncEngineResult[],
   chunks: Int16Array[],
@@ -252,12 +232,6 @@ function combineCues(
 
 const allCues = combineCues(results, chunks);
 ```
-
----
-
-## Performance
-
-Once a worker's decoder is built, analysis costs about 0.2 to 0.4 s of CPU per second of audio ([BENCHMARK.md](../BENCHMARK.md)). The cost is the same on the main thread and in a worker. Workers keep the UI responsive, and independent jobs run in parallel across the workers started by `warmup()`, limited by CPU cores.
 
 ---
 
@@ -283,7 +257,7 @@ export function getPool(): Promise<WorkerPool> {
   return poolPromise;
 }
 
-/** Call only when the app is done with lip-sync (for example on app teardown) */
+/** Call only when the app is done with lip sync (for example on app teardown) */
 export function destroyPool(): void {
   poolPromise = null;
   WorkerPool.getInstance().destroy();
@@ -294,7 +268,7 @@ Components get the pool in a mount hook (which does not run during server-side r
 
 ### React
 
-```typescript
+```tsx
 // LipSyncButton.tsx
 import { useEffect, useState } from 'react';
 import type { LipSyncEngineResult, WorkerPool } from 'lip-sync-engine';
@@ -454,7 +428,7 @@ async function handleAnalyze() {
 
 ### 1. Keep One Pool for the Session
 
-Create the pool once with an explicit worker count and keep it until the app is done with lip-sync. See [Pool Lifecycle and Sizing](#pool-lifecycle-and-sizing).
+Create the pool once with an explicit worker count and keep it until the app is done with lip sync. See [Pool Lifecycle and Sizing](#pool-lifecycle-and-sizing).
 
 ```typescript
 import { WorkerPool, loadAudio } from 'lip-sync-engine';
@@ -481,7 +455,7 @@ async function analyzeOnce(pcm16: Int16Array) {
 
 ### 2. Handle Startup and Analysis Errors
 
-`init()`, `warmup()` and `analyze()` all return promises that can reject. Handle each one: a rejected promise without a handler is reported as an unhandled rejection, and the work it stood for is lost.
+`init()`, `warmup()`, and `analyze()` all return promises that can reject. Handle each one: a rejected promise without a handler is reported as an unhandled rejection, and the work it stood for is lost.
 
 ```typescript
 import { WorkerPool, WorkerPoolDestroyedError } from 'lip-sync-engine';
@@ -496,7 +470,7 @@ try {
   await pool.init();
 } catch (error) {
   if (!(error instanceof WorkerPoolDestroyedError)) {
-    console.error('Lip-sync is unavailable:', error); // show a message to the user
+    console.error('Lip sync is unavailable:', error); // show a message to the user
   }
 }
 ```
@@ -530,14 +504,13 @@ For stream analyzers, watch the stream's own statistics instead (see [Streaming 
 
 ### Errors from the Pool
 
-| Error | Meaning | Recovery |
-|---|---|---|
-| [`WorkerPoolDestroyedError`](./api-reference.md#workerpooldestroyederror) | `destroy()` was called while `init()`, `warmup()` or an analysis was pending. | Expected during teardown: ignore it with `error instanceof WorkerPoolDestroyedError`. The next `getInstance()` call creates a new pool. |
-| `WorkerPool not initialized. Call init() first.` | `analyze()`, `analyzeChunks()`, `warmup()` or `createStreamAnalyzer()` ran before `init()` resolved, after `destroy()`, or after every worker failed. | Await `init()` first. |
-| `Worker failed to load: ...` | The worker script could not be loaded (wrong `workerScriptUrl`, a 404, or a cross-origin host without CORS). | Fix the script URL or hosting, then call `init()` again. |
-| `Worker initialization failed: ...` | The worker started but could not load or start the WASM module (wrong `wasmPath`, `dataPath` or `jsPath`, or missing CORS headers). | Fix the paths or hosting, then call `init()` again. |
-| `Worker crashed: ...` | A running worker failed. The job it was running rejects and the worker leaves the pool; the other workers continue. The pool does not replace it on its own. | Call `warmup()` to start a replacement. |
-| `All WorkerPool workers failed. Call init() to restart the pool.` | No worker is left or starting, so queued jobs were rejected and the pool reset. | Call `init()` (and `warmup()`) again. |
+Every pool error message, and when it occurs, is listed under [WorkerPool Errors](./api-reference.md#workerpool-errors). To recover:
+
+- [`WorkerPoolDestroyedError`](./api-reference.md#workerpooldestroyederror): expected during teardown. Ignore it with `error instanceof WorkerPoolDestroyedError`; the next `getInstance()` call creates a new pool.
+- `WorkerPool not initialized. Call init() first.`: await `init()` before analyzing or calling `warmup()`.
+- `Worker failed to load: ...` or `Worker initialization failed: ...`: fix the worker script URL, the WASM paths, or the CORS headers (see [CORS Issues](#cors-issues)), then call `init()` again. A failed pool startup is not cached.
+- `Worker crashed: ...`: the other workers keep running. Call `warmup()` to start a replacement.
+- `All WorkerPool workers failed. Call init() to restart the pool.`: call `init()` (and `warmup()`) again.
 
 ### Worker Script Not Found
 
@@ -565,7 +538,7 @@ Each warm worker uses about 115 MB, so memory grows with the worker count, not w
 
 - **Use fewer workers.** One or two are enough for streaming speech (see [Choose a Worker Count](#choose-a-worker-count)).
 - **Build extra decoders only when needed.** With `prewarm: 'first'`, only the `init()` worker builds its decoder at start-up; workers started by `warmup()` build theirs on their first job, and jobs go to workers that already have one first.
-- **Use the phonetic recognizer as a last resort.** `recognizer: 'phonetic'` used about 80 MB per extra worker instead of 140 MB and about a third of the CPU, but only about 62% of frames matched the reference instead of 87% ([BENCHMARK.md](../BENCHMARK.md)). It also ignores `dialogText`.
+- **Use the phonetic recognizer as a last resort.** `recognizer: 'phonetic'` used about 60 MB less memory per worker and about a third of the CPU, but only about 62% of frames matched the reference instead of 87% ([BENCHMARK.md](../BENCHMARK.md)). It also ignores `dialogText`.
 
 ```typescript
 import { WorkerPool } from 'lip-sync-engine';
@@ -634,7 +607,7 @@ async function analyzeWithFallback(pcm16: Int16Array): Promise<LipSyncEngineResu
 
 ## See Also
 
-- [API Reference](./api-reference.md): every class, option and error
-- [Getting Started](./getting-started.md): installation, basic usage and self-hosting
+- [API Reference](./api-reference.md): every class, option, and error
+- [Getting Started](./getting-started.md): installation, basic usage, and self-hosting
 - [Streaming Analysis](./streaming-analysis.md): analyzing audio as it arrives
-- [BENCHMARK.md](../BENCHMARK.md): speed, memory and quality measurements
+- [BENCHMARK.md](../BENCHMARK.md): speed, memory, and quality measurements

@@ -1,6 +1,6 @@
 # API Reference
 
-Classes, functions and types exported by `lip-sync-engine`.
+Classes, functions, and types exported by `lip-sync-engine`.
 
 - [Default Asset URLs](#default-asset-urls)
 - Core classes: [LipSyncEngine](#lipsyncengine), [WorkerPool](#workerpool), [WorkerPoolDestroyedError](#workerpooldestroyederror), [StreamAnalyzerController](#streamanalyzercontroller), [WasmLoader](#wasmloader)
@@ -8,7 +8,8 @@ Classes, functions and types exported by `lip-sync-engine`.
 - [Audio Utilities](#audio-utilities)
 - [Types](#types)
 - [Mouth Shapes](#mouth-shapes)
-- [Best Practices](#best-practices)
+
+For usage advice (dialog text, sample rate, error handling, cleanup), see [Best Practices](./getting-started.md#best-practices) in Getting Started.
 
 Each example is a self-contained TypeScript module. `declare` lines stand in for values your app provides, such as `pcm16` (mono 16-bit PCM audio as an `Int16Array`).
 
@@ -96,7 +97,7 @@ Analyzes audio on the main thread and returns its mouth cues. Calls `init()` fir
 
 **Parameters:**
 - `pcm16: Int16Array`: mono 16-bit PCM audio.
-- `options?: LipSyncEngineOptions`: transcript, sample rate and shape set (see [`LipSyncEngineOptions`](#lipsyncengineoptions)).
+- `options?: LipSyncEngineOptions`: transcript, sample rate, and shape set (see [`LipSyncEngineOptions`](#lipsyncengineoptions)).
 
 **Returns:** `Promise<LipSyncEngineResult>`, with `metadata` filled in (see [`LipSyncEngineResult`](#lipsyncengineresult)).
 
@@ -104,9 +105,9 @@ Analyzes audio on the main thread and returns its mouth cues. Calls `init()` fir
 - `TypeError('pcm16 must be an Int16Array')` when `pcm16` is not an `Int16Array`.
 - `Error('pcm16 buffer is empty')` when `pcm16` has no samples.
 - `Error('sampleRate must be positive')` when `sampleRate` is `0` or negative.
-- `Error("Unknown extended shape '<letter>'. Use any of G, H, X.")` when `extendedShapes` contains a letter other than G, H or X.
+- `Error("Unknown extended shape '<letter>'. Use any of G, H, X.")` when `extendedShapes` contains a letter other than G, H, or X.
 - The errors of [`init()`](#initoptions) when the engine cannot load.
-- The engine's error message when the analysis itself fails.
+- The engine's error message when the analysis itself fails, usually `Analysis error: <reason>` (for example for audio below 16 kHz).
 
 **Example:**
 ```typescript
@@ -230,7 +231,7 @@ const pool = WorkerPool.getInstance(2, '/lip-sync-engine/worker.js');
 
 #### `init(options?)`
 
-Starts the pool with one worker. Must finish before `analyze()`, `analyzeChunks()`, `createStreamAnalyzer()` or `warmup()`. Use `warmup()` to start the remaining workers.
+Starts the pool with one worker. Must finish before `analyze()`, `analyzeChunks()`, `createStreamAnalyzer()`, or `warmup()`. Use `warmup()` to start the remaining workers.
 
 Calls made while startup is in progress share that startup, and calls made after the pool has started resolve at once. Both ignore their options: the options of the call that started the pool apply. After a failed startup, or after every worker has failed, `init()` starts the pool again.
 
@@ -238,16 +239,16 @@ Calls made while startup is in progress share that startup, and calls made after
 - `options?: WorkerPoolInitOptions`:
   - `wasmPath?: string`, `dataPath?: string`, `jsPath?: string`: engine file URLs. Default: the [default asset URLs](#default-asset-urls).
   - `workerScriptUrl?: string`: worker script URL. Default: the value given to `getInstance()`, or the CDN URL.
-  - `prewarm?: PrewarmMode`: when each worker builds its speech decoder (acoustic model, dictionary and language model; about 0.5 s of CPU per worker). Default `true`.
+  - `prewarm?: PrewarmMode`: when each worker builds its speech decoder (acoustic model, dictionary, and language model; about 0.5 s of CPU per worker). Default `true`.
     - `true`: during `init()` and `warmup()`, so no analysis waits for it.
     - `'first'`: only the `init()` worker builds it during startup; workers started by `warmup()` build it on their first job. Jobs go to workers whose decoder is built first.
     - `false`: each worker builds it on its first job.
   - `shareAssets?: boolean`: compile the `.wasm` file once. The first worker sends its compiled module back, and later workers (including those of pools created later) reuse it. Default `true`. Each worker still loads its own copy of the model file, normally from the browser's HTTP cache after the first download.
-  - `recognizer?: RecognizerKind`: speech recognizer for all workers. Default `'pocketsphinx'`. `'phonetic'` recognizes phones without words. It uses about a third of the CPU, about 60 MB less memory per worker, and returns the first chunk much sooner, but its mouth shapes are clearly worse: about 62% agreement against 87% for the default in the streaming benchmark (agreement is the share of 10 ms frames whose shape matches a whole-answer reference; see [BENCHMARK.md](../BENCHMARK.md#mouth-cue-quality)). It ignores `dialogText`. Use it only on devices that cannot keep up otherwise.
+  - `recognizer?: RecognizerKind`: speech recognizer for all workers. Default `'pocketsphinx'`. `'phonetic'` recognizes phones without words. It uses about a third of the CPU, about 60 MB less memory per worker, and returns the first chunk much sooner, but its mouth shapes are clearly worse: about 62% agreement against 87% for the default in the streaming benchmark (agreement is the share of 10 ms frames whose shape matches a whole-utterance reference; see [BENCHMARK.md](../BENCHMARK.md#mouth-cue-quality)). It ignores `dialogText`. Use it only on devices that cannot keep up otherwise.
 
 **Returns:** `Promise<void>`.
 
-**Throws:** the promise rejects with `Worker failed to load: ...`, `Worker initialization failed: ...` or [`WorkerPoolDestroyedError`](#workerpooldestroyederror); see [WorkerPool Errors](#workerpool-errors).
+**Throws:** the promise rejects with `Worker failed to load: ...`, `Worker initialization failed: ...`, or [`WorkerPoolDestroyedError`](#workerpooldestroyederror); see [WorkerPool Errors](#workerpool-errors).
 
 **Example:**
 ```typescript
@@ -278,7 +279,7 @@ Concurrent calls share one warmup. If one worker fails to start, the promise rej
 
 **Throws:** the promise rejects with:
 - `Error('WorkerPool not initialized. Call init() first.')` when `init()` has not finished.
-- `Worker failed to load: ...`, `Worker initialization failed: ...` or [`WorkerPoolDestroyedError`](#workerpooldestroyederror); see [WorkerPool Errors](#workerpool-errors).
+- `Worker failed to load: ...`, `Worker initialization failed: ...`, or [`WorkerPoolDestroyedError`](#workerpooldestroyederror); see [WorkerPool Errors](#workerpool-errors).
 
 **Example:**
 ```typescript
@@ -302,7 +303,7 @@ Analyzes audio in a worker. When every worker is busy, the job waits in a queue;
 **Throws:** the promise rejects with:
 - `Error('WorkerPool not initialized. Call init() first.')` when `init()` has not finished.
 - The engine's error message when the analysis fails, for example `"Unknown extended shape '<letter>'. Use any of G, H, X."` for an invalid `extendedShapes` value.
-- `Worker crashed: ...`, `All WorkerPool workers failed. Call init() to restart the pool.` or [`WorkerPoolDestroyedError`](#workerpooldestroyederror); see [WorkerPool Errors](#workerpool-errors).
+- `Worker crashed: ...`, `All WorkerPool workers failed. Call init() to restart the pool.`, or [`WorkerPoolDestroyedError`](#workerpooldestroyederror); see [WorkerPool Errors](#workerpool-errors).
 
 **Example:**
 ```typescript
@@ -421,7 +422,7 @@ console.log(`Queue: ${stats.queuedJobs} jobs waiting`);
 
 #### `getMemoryStats()`
 
-Asks each worker in the pool for the size of its WebAssembly memory. This is most of a worker's memory; each worker also holds its JavaScript heap and its copy of the model file (about 39 MB) on top.
+Asks each worker in the pool for the size of its WebAssembly memory. This is memory the worker has reserved for the engine: at least 128 MiB per worker, growing when the engine needs more and never shrinking. Reserved memory is not all in use, so this figure can be larger than a worker's actual memory use (about 115 MB for a warm worker; see [BENCHMARK.md](../BENCHMARK.md)). Use it to watch for growth over time, not to measure a worker's total memory.
 
 **Parameters:** none.
 
@@ -443,7 +444,7 @@ console.log(`${workers.length} workers, ${(totalBytes / 1e6).toFixed(0)} MB of W
 
 Terminates all workers, including workers that are still starting, and releases the pool's resources. The next `getInstance()` call creates a new pool, and its arguments apply again.
 
-Pending `init()`, `warmup()` and analysis promises reject with [`WorkerPoolDestroyedError`](#workerpooldestroyederror). In a stream analyzer with `contextMs` or `lookaheadMs`, chunks not yet sent to a worker reject with `Error('WorkerPool not initialized. Call init() first.')` instead.
+Pending `init()`, `warmup()`, and analysis promises reject with [`WorkerPoolDestroyedError`](#workerpooldestroyederror). In a stream analyzer with `contextMs` or `lookaheadMs`, chunks not yet sent to a worker reject with `Error('WorkerPool not initialized. Call init() first.')` instead.
 
 **Parameters:** none.
 
@@ -453,7 +454,7 @@ Pending `init()`, `warmup()` and analysis promises reject with [`WorkerPoolDestr
 ```typescript
 import { WorkerPool } from 'lip-sync-engine';
 
-// When the app no longer needs lip-sync
+// When the app no longer needs lip sync
 WorkerPool.getInstance().destroy();
 ```
 
@@ -463,9 +464,9 @@ Errors other than `WorkerPoolDestroyedError` are plain `Error` objects. Match th
 
 | Message | Where and when |
 |---|---|
-| `WorkerPool not initialized. Call init() first.` | `warmup()`, `analyze()` and `analyzeChunks()` reject, and `createStreamAnalyzer()` throws, when `init()` has not finished (also after `destroy()`, or after every worker has failed). |
+| `WorkerPool not initialized. Call init() first.` | `warmup()`, `analyze()`, and `analyzeChunks()` reject, and `createStreamAnalyzer()` throws, when `init()` has not finished (also after `destroy()`, or after every worker has failed). |
 | `Worker failed to load: <detail>` | `init()` or `warmup()`: a worker's script failed to load (for example a wrong `workerScriptUrl` or missing CORS headers), or the worker threw while starting. |
-| `Worker initialization failed: <detail>` | `init()` or `warmup()`: a worker could not load the engine files or start the engine. |
+| `Worker initialization failed: <detail>` | `init()` or `warmup()`: a worker could not load the engine files or start the engine (for example a wrong `wasmPath`, `dataPath`, or `jsPath`, or missing CORS headers). |
 | `Worker crashed: <detail>` | The job a worker was running when it crashed. The pool removes that worker and does not replace it on its own; call `warmup()` to start a replacement. |
 | `All WorkerPool workers failed. Call init() to restart the pool.` | Queued jobs, once every worker has failed and none is starting. Call `init()` to start the pool again. |
 | `WorkerPoolDestroyedError` | Pending promises when `destroy()` is called. See [WorkerPoolDestroyedError](#workerpooldestroyederror). |
@@ -476,7 +477,7 @@ An analysis that fails inside a worker rejects only its own job with the engine'
 
 ### WorkerPoolDestroyedError
 
-Error used to reject pending `init()`, `warmup()` and analysis promises when `destroy()` is called. Its `name` is `'WorkerPoolDestroyedError'` and its `message` is `'WorkerPool destroyed'`. Ignore it when you destroy the pool during cleanup, for example when a component unmounts while the pool is still starting.
+Error used to reject pending `init()`, `warmup()`, and analysis promises when `destroy()` is called. Its `name` is `'WorkerPoolDestroyedError'` and its `message` is `'WorkerPool destroyed'`. Ignore it when you destroy the pool during cleanup, for example when a component unmounts while the pool is still starting.
 
 ```typescript
 import { WorkerPool, WorkerPoolDestroyedError } from 'lip-sync-engine';
@@ -484,7 +485,7 @@ import { WorkerPool, WorkerPoolDestroyedError } from 'lip-sync-engine';
 const pool = WorkerPool.getInstance(2);
 
 pool.init().catch((error: unknown) => {
-  if (error instanceof WorkerPoolDestroyedError) return; // cancelled by destroy()
+  if (error instanceof WorkerPoolDestroyedError) return; // canceled by destroy()
   console.error('WorkerPool failed to start:', error);
 });
 ```
@@ -783,7 +784,7 @@ Fetches or reads an audio file and decodes it.
 
 **Returns:** `Promise<{ pcm16: Int16Array; audioBuffer: AudioBuffer }>`: the first channel as PCM, and the decoded `AudioBuffer`.
 
-**Throws:** the promise rejects when the file cannot be fetched, read or decoded.
+**Throws:** the promise rejects when the file cannot be fetched, read, or decoded.
 
 **Example:**
 ```typescript
@@ -862,7 +863,7 @@ const resampled = resample(float32Data, 44100, 16000);
 
 ### Type Names
 
-`WorkerPoolInitOptions`, `WorkerPoolStats` and `StreamAnalyzerStats` are names this page uses for types the package does not export. In TypeScript, refer to them as:
+`WorkerPoolInitOptions`, `WorkerPoolStats`, and `StreamAnalyzerStats` are names this page uses for types the package does not export. In TypeScript, refer to them as:
 
 ```typescript
 import type { StreamAnalyzerController, WorkerPool } from 'lip-sync-engine';
@@ -905,7 +906,7 @@ interface LipSyncEngineResult {
 }
 ```
 
-Only `LipSyncEngine.analyze()` (and the `analyze()` function) sets `metadata` as shown. Results from `WorkerPool`, `analyzeAsync()` and stream analyzers carry different metadata; use `mouthCues` for timing.
+Only `LipSyncEngine.analyze()` (and the `analyze()` function) sets `metadata` as shown. Results from `WorkerPool`, `analyzeAsync()`, and stream analyzers carry different metadata; use `mouthCues` for timing.
 
 ### `LipSyncEngineOptions`
 
@@ -920,8 +921,8 @@ interface LipSyncEngineOptions {
 ```
 
 - `dialogText`: when you know what is said, pass it. The `'phonetic'` recognizer ignores it.
-- `sampleRate`: must match the audio. The engine converts other rates to 16 kHz internally.
-- `extendedShapes`: any combination of `G` (F/V), `H` (L) and `X` (idle), in any order and case. `'GHX'` (the default) gives all nine shapes; `''` gives A-F only, for avatars without G, H and X art. Any other character makes the analysis fail with `Unknown extended shape '<letter>'. Use any of G, H, X.`
+- `sampleRate`: must match the audio. Higher rates are converted down to 16 kHz internally. Rates below 16 kHz are not supported: the analysis fails with an `Analysis error: ...` message.
+- `extendedShapes`: any combination of `G`, `H`, and `X` (see [Mouth Shapes](#mouth-shapes)), in any order and case. `'GHX'` (the default) gives all nine shapes; `''` gives A-F only, for avatars without G, H, and X art. Any other character makes the analysis fail with `Unknown extended shape '<letter>'. Use any of G, H, X.`
 
 ### `StreamAnalyzerOptions`
 
@@ -980,67 +981,14 @@ Low-level interface to the compiled engine, returned by `WasmLoader.load()` and 
 
 ## Mouth Shapes
 
-`MouthCue.value` is one of Rhubarb Lip Sync's mouth shapes. A to F are the basic Hanna-Barbera shapes. G, H and X are extended shapes, returned only when `extendedShapes` includes them (the default `'GHX'` includes all three). For an image of each shape, see [Mouth Shapes in the README](../README.md#mouth-shapes).
+`MouthCue.value` is one of Rhubarb Lip Sync's mouth shapes. A to F are the basic Hanna-Barbera shapes. G, H, and X are extended shapes, returned only when `extendedShapes` includes them (the default `'GHX'` includes all three). For an image and example sounds for each shape, see [Mouth Shapes in the README](../README.md#mouth-shapes).
 
-| Shape | Label | Set | Example sounds |
-|---|---|---|---|
-| A | Closed (M, B, P) | Basic | **m**ap, **b**ig, **p**ot |
-| B | Clenched teeth | Basic | most consonants, such as **s**, **t** and **k**; ee as in b**ee** |
-| C | Open | Basic | e as in m**e**n, a as in b**a**t |
-| D | Wide open | Basic | a as in f**a**ther |
-| E | Rounded | Basic | o as in **o**ff, er as in h**er** |
-| F | Puckered | Basic | oo as in y**ou**, w as in **w**ay |
-| G | F/V (upper teeth on lower lip) | Extended | **f**an, **v**an |
-| H | L (tongue raised) | Extended | a held l, as in **l**ong |
-| X | Idle | Extended | silence and pauses |
-
-## Best Practices
-
-### Sample Rate
-
-Pass mono audio at 16 kHz when you can, and set `sampleRate` to the buffer's actual rate. The engine converts other rates to 16 kHz internally.
-
-### Dialog Text
-
-Pass `dialogText` whenever you know what is said; it improves recognition.
-
-```typescript
-import { analyze } from 'lip-sync-engine';
-
-declare const pcm16: Int16Array;
-declare const transcript: string | undefined;
-
-const result = transcript
-  ? await analyze(pcm16, { dialogText: transcript }) // more accurate
-  : await analyze(pcm16);
-```
-
-### Memory Management
-
-Call `LipSyncEngine.destroy()` when you are done with main-thread analysis, and `WasmLoader.reset()` as well to let the WASM module be garbage-collected. Keep a `WorkerPool` alive between utterances and call `destroy()` on it only when you no longer need lip-sync. See [Pool Lifecycle and Sizing](./worker-usage.md#pool-lifecycle-and-sizing).
-
-```typescript
-import { LipSyncEngine, WasmLoader } from 'lip-sync-engine';
-
-declare const pcm16: Int16Array;
-
-const lipSyncEngine = LipSyncEngine.getInstance();
-const result = await lipSyncEngine.analyze(pcm16);
-
-// When completely done
-lipSyncEngine.destroy();
-WasmLoader.reset();
-```
-
-### Main Thread or Worker
-
-`analyze()` blocks the main thread for the whole analysis, so the page cannot render or respond to input meanwhile. In workers, analysis takes roughly 0.2 to 0.4 s of CPU per second of audio ([BENCHMARK.md](../BENCHMARK.md)), and the first main-thread call also builds the speech decoder. In an interactive page, prefer `analyzeAsync()` or a `WorkerPool`.
-
-```typescript
-import { LipSyncEngine } from 'lip-sync-engine';
-
-declare const pcm16: Int16Array;
-
-// Runs in a worker; the page stays responsive
-const result = await LipSyncEngine.getInstance().analyzeAsync(pcm16);
-```
+- `A`: Closed (M, B, P)
+- `B`: Clenched teeth
+- `C`: Open
+- `D`: Wide open
+- `E`: Rounded
+- `F`: Puckered
+- `G`: F/V (upper teeth on lower lip)
+- `H`: L (tongue raised)
+- `X`: Idle

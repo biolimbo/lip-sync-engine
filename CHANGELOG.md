@@ -8,39 +8,57 @@ All notable changes to `lip-sync-engine` are documented here. The format follows
 
 Measurements behind the figures below are in [BENCHMARK.md](./BENCHMARK.md).
 
+### Added
+
+- `extendedShapes` analysis option: any combination of `'G'`, `'H'`, and `'X'` (default `'GHX'`).
+- Streaming analyzer options `contextMs` and `lookaheadMs` analyze each chunk together with the
+  audio around it. With 250 to 1000 ms chunks and nine mouth shapes, agreement with whole-utterance
+  analysis is about 32-65% when each chunk is analyzed alone and 85-86% with both options at 500,
+  and the mouth closes far less often at chunk boundaries (see
+  [Context and Lookahead](./docs/streaming-analysis.md#context-and-lookahead)). Related options:
+  `firstChunkLookahead`, `deadlineMarginMs`, `maxWaitMs`, `maxConcurrent`, and `maxBatchMs`.
+- `StreamAnalyzerController.getResult(index)` and `end()`.
+- `WorkerPool.init()` options `prewarm`, `shareAssets`, and `recognizer` (`'pocketsphinx'` or the
+  faster, less accurate `'phonetic'`).
+- `WorkerPool.getMemoryStats()`.
+- `WasmLoaderOptions.wasmModule` and `dataBuffer`, to pass an already compiled `.wasm` module or the
+  contents of the `.data` file instead of downloading them.
+- Optional `LipSyncEngineModule` functions `_lipsyncengine_prewarm()`,
+  `_lipsyncengine_set_recognizer()`, and `_lipsyncengine_set_extended_shapes()`.
+- Exports: `WorkerPoolDestroyedError`, and the types `StreamAnalyzerOptions`, `PrewarmMode`,
+  `RecognizerKind`, `WorkerStatsRequest`, and `WorkerStatsResponse`.
+
 ### Changed
 
-- **Breaking:** results use Rhubarb's nine mouth shapes by default: A-F plus G (F, V), H (L) and X
-  (idle). Pass `extendedShapes: ''` to get only A-F, the 1.x output.
+- **Breaking:** results use Rhubarb's nine mouth shapes by default: A-F plus the extended shapes G,
+  H, and X (see [Mouth Shapes](./README.md#mouth-shapes)). Pass `extendedShapes: ''` to get only
+  A-F; without `contextMs` or `lookaheadMs`, output is then byte-identical to 1.0.3 for the same
+  input.
+
+  Upgrading from 1.x:
+
+  - If your character only has art for A-F, pass `extendedShapes: ''`.
+  - Create one `WorkerPool` and keep it for the whole session instead of destroying it after each
+    utterance. Each worker keeps its speech decoder between calls, so reusing a pool is much faster
+    than starting a new one (see
+    [Pool Lifecycle and Sizing](./docs/worker-usage.md#pool-lifecycle-and-sizing)).
+  - In cleanup code, ignore `WorkerPoolDestroyedError` (check with `instanceof`): pending promises
+    reject with it when the pool is destroyed.
 - The engine keeps its PocketSphinx decoder between calls, on the main thread and in each worker,
   instead of rebuilding it on every call (about 0.4 s per call in 1.0.3). A 250 ms chunk takes
   under 100 ms to analyze instead of about 450 ms, and the first chunk on a pool kept from an
   earlier utterance about 130 ms instead of about 480 ms. Calls with a `dialogText` different from
   the last one used still build a decoder for that text.
-- Workers build their decoder during `init()` and `warmup()` (see the `prewarm` option), so a fresh
-  pool takes about 0.5 to 1.2 s to start.
+- Workers build their decoder during `init()` and `warmup()` (see the `prewarm` option), so the
+  first analysis does not wait for it. A fresh pool still reaches its first cue sooner than in
+  1.0.3; startup time grows with the worker count, most on devices with few cores.
 - `WorkerPool` compiles the `.wasm` file once and shares the compiled module with its other workers
   (see the `shareAssets` option), and fetches the worker script once per pool.
-- `WorkerPool.destroy()` rejects pending `init()`, `warmup()` and analysis promises with
+- `WorkerPool.destroy()` rejects pending `init()`, `warmup()`, and analysis promises with
   `WorkerPoolDestroyedError`.
 - `analyzeAsync()` starts the shared `WorkerPool` itself when the app has not started it.
-- With `extendedShapes: ''` and no `contextMs` or `lookaheadMs`, output is byte-identical to 1.0.3
-  for the same input.
-
-### Added
-
-- `extendedShapes` analysis option: any combination of `'G'`, `'H'` and `'X'` (default `'GHX'`).
-- Streaming analyzer options `contextMs` and `lookaheadMs` analyze each chunk together with the
-  audio around it. With 500 ms of each, agreement with whole-utterance analysis rises from 37-68%
-  to 82-90%, and false lip closures at chunk boundaries fall from 11-34% of frames to about 2%.
-  Related options: `firstChunkLookahead`, `deadlineMarginMs`, `maxWaitMs`, `maxConcurrent`,
-  `maxBatchMs`.
-- `StreamAnalyzerController.getResult(index)` and `end()`.
-- `WorkerPool.init()` options `prewarm`, `shareAssets` and `recognizer` (`'pocketsphinx'` or the
-  faster, less accurate `'phonetic'`).
-- `WorkerPool.getMemoryStats()`.
-- Exports: `WorkerPoolDestroyedError`, and the types `StreamAnalyzerOptions`, `PrewarmMode` and
-  `RecognizerKind`.
+- The `WorkerRequest` and `WorkerResponse` types include `WorkerStatsRequest` and
+  `WorkerStatsResponse`.
 
 ### Fixed
 
@@ -71,8 +89,8 @@ First release available on npm.
 
 - `LipSyncEngine` class and the `analyze()` and `analyzeAsync()` functions.
 - `WorkerPool` with `init()`, `warmup()`, `analyze()`, `analyzeChunks()`, `createStreamAnalyzer()`,
-  `getStats()` and `destroy()`, and `StreamAnalyzerController`.
-- Audio utilities: `recordAudio()`, `loadAudio()`, `audioBufferToInt16()`, `float32ToInt16()` and
+  `getStats()`, and `destroy()`, and `StreamAnalyzerController`.
+- Audio utilities: `recordAudio()`, `loadAudio()`, `audioBufferToInt16()`, `float32ToInt16()`, and
   `resample()`.
 
 [2.0.0]: https://github.com/biolimbo/lip-sync-engine/compare/v1.0.3...v2.0.0

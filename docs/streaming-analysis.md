@@ -278,6 +278,6 @@ async function analyzeLive(pool: WorkerPool, liveStream: AsyncIterable<Int16Arra
 ## See Also
 
 - [API Reference](./api-reference.md#streamanalyzercontroller): `StreamAnalyzerController` and its options
-- [Worker Usage](./worker-usage.md): pool lifecycle, worker count, memory and troubleshooting
-- [`examples/stream-example.ts`](../examples/stream-example.ts): async source, WebSocket and microphone streaming
+- [Worker Usage](./worker-usage.md): pool lifecycle, worker count, memory, and troubleshooting
+- [`examples/stream-example.ts`](../examples/stream-example.ts): streaming from an async source (`analyzeStream`), a WebSocket (`analyzeWebSocket`), and the microphone (`analyzeMicrophone`)
 - [Examples](../examples/): complete working apps

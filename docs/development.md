@@ -154,7 +154,7 @@ const paths = {
 };
 ```
 
-In `getEngine()`, change `engine.init()` to `engine.init(paths)`. In `getPool()`, change `pool.init()` to `` pool.init({ ...paths, workerScriptUrl: `${DIST}worker.js` }) ``. Do not commit these edits. Combine them with [the link step](#link-the-package-into-an-example) to test TypeScript and WASM changes together.
+In `prepare()`, change `LipSyncEngine.getInstance().init()` to `LipSyncEngine.getInstance().init(paths)` and `pool.init()` to `` pool.init({ ...paths, workerScriptUrl: `${DIST}worker.js` }) ``. Do not commit these edits. Combine them with [the link step](#link-the-package-into-an-example) to test TypeScript and WASM changes together.
 
 ## Adding a Feature
 
@@ -173,7 +173,7 @@ In `getEngine()`, change `engine.init()` to `engine.init(paths)`. In `getPool()`
 
    `npm pack --dry-run` lists the files that would be published. Check that `dist/wasm/` and `dist/worker.js` are included.
 
-CI runs these checks on every push and pull request to `main`, and the publish workflow runs them again before publishing.
+CI runs these checks on every push and pull request to `main`. Before publishing, the publish workflow runs the build, the type check, and the tests again.
 
 ## Debugging the WASM Build
 
