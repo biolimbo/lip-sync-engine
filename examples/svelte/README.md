@@ -9,7 +9,7 @@ A Svelte 4 app that analyzes recorded or loaded audio with `lip-sync-engine` in 
 - Four execution modes:
   - Single Thread: main thread (blocks the UI).
   - Web Worker: one worker, so the UI stays responsive.
-  - Chunked Workers: splits the audio across up to 4 workers with `analyzeChunks()`. Each chunk is analyzed on its own, so cues near chunk edges are less accurate.
+  - Chunked: splits audio across up to 4 workers with `analyzeChunks()`. Each chunk is analyzed on its own, so cues near chunk edges are less accurate.
   - Streaming: feeds the chunks to `createStreamAnalyzer()` with 500 ms of context and lookahead, as a live source would.
 - Performance metrics: execution time, cue count, workers used, and chunks processed.
 - Adjustable recording duration and chunk size.
@@ -87,7 +87,7 @@ examples/svelte/
 {/if}
 ```
 
-Selecting a mode starts what it needs: the engine for Single Thread, one worker for Web Worker, and all workers for Chunked Workers and Streaming. `isInitialized` turns true when that startup finishes, and `initError` is set if it fails. `analyze()` also starts the mode if needed, so the Record button does not wait for `isInitialized`.
+Selecting a mode starts what it needs: the engine for Single Thread, one worker for Web Worker, and all workers for Chunked and Streaming. `isInitialized` turns true when that startup finishes, and `initError` is set if it fails. `analyze()` also starts the mode if needed, so the Record button does not wait for `isInitialized`.
 
 `analyze()` resolves with the result, throws on failure, and sets `error` in the store. `lipSyncEngineStore.destroy()` frees the engine and the workers when the app no longer needs them.
 

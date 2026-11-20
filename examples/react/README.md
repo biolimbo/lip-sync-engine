@@ -7,7 +7,7 @@ A React and TypeScript app that records or loads speech, analyzes it with `lip-s
 - Record from the microphone for 5 to 60 seconds, or load an audio file (MP3, WAV, and other formats the browser can decode).
 - Optional dialog text to improve recognition accuracy.
 - Four execution modes:
-  - **Main Thread**: runs `LipSyncEngine.analyze()` on the main thread, which blocks the UI.
+  - **Single Thread**: runs `LipSyncEngine.analyze()` on the main thread, which blocks the UI.
   - **Web Worker**: runs `WorkerPool.analyze()` in one worker.
   - **Chunked**: splits the audio across up to 4 workers with `analyzeChunks()`. Each chunk is analyzed on its own, so cues near chunk edges are less accurate.
   - **Streaming**: feeds the chunks to `createStreamAnalyzer()` with 500 ms of context and lookahead, as a live source would.
@@ -85,7 +85,7 @@ function MyComponent() {
   return (
     <div>
       <select value={mode} onChange={(e) => setMode(e.target.value as ExecutionMode)}>
-        <option value="single">Main Thread</option>
+        <option value="single">Single Thread</option>
         <option value="worker">Web Worker</option>
         <option value="chunked">Chunked</option>
         <option value="streaming">Streaming</option>

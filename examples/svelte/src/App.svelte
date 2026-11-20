@@ -51,10 +51,10 @@
 
   function modeLabel(mode: ExecutionMode): string {
     switch (mode) {
-      case 'single': return 'Main thread (blocks the UI)';
+      case 'single': return 'Single Thread';
       case 'worker': return 'Web Worker';
-      case 'chunked': return 'Chunked: splits audio across up to 4 workers';
-      case 'streaming': return 'Streaming: chunks with 500 ms context and lookahead';
+      case 'chunked': return 'Chunked';
+      case 'streaming': return 'Streaming';
     }
   }
 
@@ -251,7 +251,7 @@
         on:click={() => handleModeChange('chunked')}
         disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
       >
-        <div class="mode-title">Chunked Workers</div>
+        <div class="mode-title">Chunked</div>
         <div class="mode-desc">Splits audio across up to 4 workers</div>
       </button>
       <button

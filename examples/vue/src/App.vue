@@ -45,7 +45,7 @@ let animationFrame: number | null = null;
 
 const modes: { id: ExecutionMode; name: string; description: string }[] = [
   { id: 'single', name: 'Single Thread', description: 'Main thread (blocks the UI)' },
-  { id: 'worker', name: 'Web Worker', description: 'One worker, the UI stays responsive' },
+  { id: 'worker', name: 'Web Worker', description: 'One worker (the UI stays responsive)' },
   { id: 'chunked', name: 'Chunked', description: 'Splits audio across up to 4 workers' },
   { id: 'streaming', name: 'Streaming', description: 'Chunks with 500 ms context and lookahead' },
 ];

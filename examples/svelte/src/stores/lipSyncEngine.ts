@@ -95,7 +95,7 @@ interface LipSyncEngineState {
  *
  * <button on:click={() => lipSyncEngineStore.setMode('single')}>Single Thread</button>
  * <button on:click={() => lipSyncEngineStore.setMode('worker')}>Web Worker</button>
- * <button on:click={() => lipSyncEngineStore.setMode('chunked')}>Chunked Workers</button>
+ * <button on:click={() => lipSyncEngineStore.setMode('chunked')}>Chunked</button>
  * <button on:click={() => lipSyncEngineStore.setMode('streaming')}>Streaming</button>
  *
  * <button on:click={handleAnalyze} disabled={$lipSyncEngineStore.isAnalyzing}>

@@ -385,8 +385,8 @@
           <span class="mode-desc">One worker (the UI stays responsive)</span>
         </button>
         <button class="mode-btn" data-mode="chunked">
-          <span class="mode-title">Chunked Workers</span>
-          <span class="mode-desc">Splits the audio across up to 4 workers</span>
+          <span class="mode-title">Chunked</span>
+          <span class="mode-desc">Splits audio across up to 4 workers</span>
         </button>
       </div>
     </div>
@@ -413,8 +413,8 @@
         </div>
 
         <div class="controls">
-          <button id="recordBtn" disabled>🎙️ Record (10s)</button>
-          <button id="loadBtn" disabled>📁 Load File</button>
+          <button id="recordBtn" disabled>Record (10s)</button>
+          <button id="loadBtn" disabled>Load File</button>
           <input type="file" id="fileInput" accept="audio/*">
         </div>
 
@@ -550,7 +550,7 @@
 
     recordingDurationInput.addEventListener('input', (e) => {
       recordingDurationValueEl.textContent = e.target.value;
-      recordBtn.textContent = `🎙️ Record (${e.target.value}s)`;
+      recordBtn.textContent = `Record (${e.target.value}s)`;
     });
 
     chunkSizeInput.addEventListener('input', (e) => {

@@ -26,8 +26,8 @@ const SHAPE_NAMES: Record<string, string> = {
 };
 
 const MODES: { id: ExecutionMode; title: string; description: string }[] = [
-  { id: 'single', title: 'Main Thread', description: 'Blocks the UI' },
-  { id: 'worker', title: 'Web Worker', description: 'Keeps the UI responsive' },
+  { id: 'single', title: 'Single Thread', description: 'Main thread (blocks the UI)' },
+  { id: 'worker', title: 'Web Worker', description: 'One worker (the UI stays responsive)' },
   { id: 'chunked', title: 'Chunked', description: 'Splits audio across up to 4 workers' },
   { id: 'streaming', title: 'Streaming', description: 'Chunks with 500 ms context and lookahead' },
 ];
@@ -428,7 +428,7 @@ function App() {
 /** Short mode name used in log lines */
 function modeLabel(mode: ExecutionMode): string {
   switch (mode) {
-    case 'single': return 'Main thread';
+    case 'single': return 'Single Thread';
     case 'worker': return 'Web Worker';
     case 'chunked': return 'Chunked';
     case 'streaming': return 'Streaming';
