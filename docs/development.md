@@ -219,7 +219,7 @@ npm test            # Vitest unit tests (test/), no WASM build needed
 npm run typecheck   # type-checks src/ts and test/
 ```
 
-CI runs both on every push and pull request to main. The publish workflow does not run `npm test`, so run it before tagging. Browser benchmarks and quality checks live in `bench/` (see `BENCHMARK.md`).
+CI runs both on every push and pull request to main, and the publish workflow runs them again before publishing. Browser benchmarks and quality checks live in `bench/` (see `BENCHMARK.md`).
 
 ### Manual Testing
 
@@ -257,20 +257,25 @@ await analyze(pcm16, { sampleRate: 44100 });
 
 ### Publishing Steps
 
+Releases are published by GitHub Actions (`.github/workflows/publish.yml`) with npm trusted publishing, so no npm token is stored in the repository. The package's trusted publisher on npmjs.com names this repository and the workflow file `publish.yml`.
+
 ```bash
-# 1. Build everything
+# 1. Optional: check the package contents
 npm run build
+npm pack --dry-run
 
-# 2. Test the build
-npm pack
-# install ./lip-sync-engine-2.0.0.tgz in a separate test project
+# 2. Optional: release candidate under the `next` dist-tag.
+#    package.json can stay at 2.0.0; CI applies the rc version.
+git tag v2.0.0-rc.0
+git push origin v2.0.0-rc.0
+# test it: npm install lip-sync-engine@next
 
-# 3. Create git tag
+# 3. Stable release under `latest` (package.json must say 2.0.0)
 git tag v2.0.0
 git push origin v2.0.0
-
-# 4. GitHub Actions will automatically publish to NPM
 ```
+
+A tag whose version does not match package.json fails before anything is published. To check the workflow without publishing, run it from the Actions tab ("Run workflow") with "dry run" ticked.
 
 ## Troubleshooting
 
