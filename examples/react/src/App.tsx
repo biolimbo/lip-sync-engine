@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { recordAudio, loadAudio } from 'lip-sync-engine';
+import type { MouthCue } from 'lip-sync-engine';
 import { useLipSyncEngine } from './hooks/useLipSyncEngine';
 import type { ExecutionMode } from './hooks/useLipSyncEngine';
 import './App.css';
@@ -15,6 +16,7 @@ function App() {
     analyze,
     result,
     isAnalyzing,
+    isInitialized,
     error,
     metrics,
     reset,
@@ -23,8 +25,7 @@ function App() {
     chunkSize,
     setChunkSize,
     recordingDuration,
-    setRecordingDuration,
-    getWorkerStats
+    setRecordingDuration
   } = useLipSyncEngine();
 
   const [dialogText, setDialogText] = useState('');
@@ -34,8 +35,10 @@ function App() {
   const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const logsEndRef = useRef<HTMLDivElement>(null);
+  // One AudioContext for all playback, closed on unmount
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
 
   const visemeNames: Record<string, string> = {
     X: 'Closed/Rest',
@@ -65,28 +68,49 @@ function App() {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
+  // Log when the selected mode starts and finishes initializing
   useEffect(() => {
-    addLog('Initializing LipSyncEngine WASM module...', 'info');
-    addLog('Initializing WorkerPool...', 'info');
-    addLog('✅ WASM module loaded successfully', 'success');
-    addLog('✅ WorkerPool initialized', 'success');
-    addLog('Viseme images preloaded', 'info');
+    if (isInitialized) addLog(`✅ ${modeLabel(mode)} ready`, 'success');
+    else addLog(`Initializing ${modeLabel(mode)}...`, 'info');
+  }, [isInitialized]);
+
+  const stopPlayback = () => {
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (audioSourceRef.current) {
+      audioSourceRef.current.onended = null;
+      audioSourceRef.current.stop();
+      audioSourceRef.current = null;
+    }
+    setCurrentViseme('X');
+    setIsPlaying(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      stopPlayback();
+      audioContextRef.current?.close();
+      audioContextRef.current = null;
+    };
   }, []);
 
-  const playAnimation = (mouthCues: Array<{ start: number; end: number; value: string }>, buffer: AudioBuffer) => {
-    if (!buffer) return;
+  const playAnimation = (mouthCues: MouthCue[], buffer: AudioBuffer) => {
+    stopPlayback();
 
-    setIsPlaying(true);
-    const audioContext = new AudioContext();
+    if (!audioContextRef.current) audioContextRef.current = new AudioContext();
+    const audioContext = audioContextRef.current;
+    void audioContext.resume();
+
     const source = audioContext.createBufferSource();
     source.buffer = buffer;
     source.connect(audioContext.destination);
-
-    audioContextRef.current = audioContext;
     audioSourceRef.current = source;
 
     const startTime = audioContext.currentTime;
-    source.start(0);
+    source.start();
+    setIsPlaying(true);
 
     let currentCueIndex = 0;
 
@@ -99,15 +123,17 @@ function App() {
 
       if (currentCueIndex < mouthCues.length) {
         setCurrentViseme(mouthCues[currentCueIndex].value);
-        requestAnimationFrame(updateViseme);
+        animationFrameRef.current = requestAnimationFrame(updateViseme);
       } else {
         setCurrentViseme('X');
+        animationFrameRef.current = null;
       }
     };
 
     updateViseme();
 
     source.onended = () => {
+      audioSourceRef.current = null;
       setCurrentViseme('X');
       setIsPlaying(false);
     };
@@ -119,8 +145,7 @@ function App() {
     setAudioBuffer(null);
     try {
       addLog('=== Starting Recording ===', 'info');
-      addLog('Microphone access granted', 'info');
-      addLog(`Recording ${recordingDuration} seconds...`, 'info');
+      addLog(`Recording ${recordingDuration} seconds (allow microphone access if asked)...`, 'info');
 
       const { pcm16, audioBuffer: buffer } = await recordAudio(recordingDuration * 1000);
 
@@ -132,11 +157,7 @@ function App() {
 
       addLog('=== Starting Analysis ===', 'info');
 
-      const modeDescription = mode === 'single' ? 'Single Thread (blocks UI)' :
-                             mode === 'worker' ? 'Web Worker (non-blocking)' :
-                             mode === 'chunked' ? 'Chunked Workers (parallel)' :
-                             'Streaming (dynamic queue)';
-      addLog(`Mode: ${modeDescription}`, 'info');
+      addLog(`Mode: ${modeLabel(mode)}`, 'info');
       addLog(`Analyzing ${pcm16.length} samples (${duration}s at 16kHz)${dialogText ? ' with dialog text' : ''}`, 'info');
 
       await analyze(pcm16, {
@@ -172,11 +193,7 @@ function App() {
 
       addLog('=== Starting Analysis ===', 'info');
 
-      const modeDescription = mode === 'single' ? 'Single Thread (blocks UI)' :
-                             mode === 'worker' ? 'Web Worker (non-blocking)' :
-                             mode === 'chunked' ? 'Chunked Workers (parallel)' :
-                             'Streaming (dynamic queue)';
-      addLog(`Mode: ${modeDescription}`, 'info');
+      addLog(`Mode: ${modeLabel(mode)}`, 'info');
       addLog(`Analyzing ${pcm16.length} samples (${duration}s at 16kHz)${dialogText ? ' with dialog text' : ''}`, 'info');
 
       await analyze(pcm16, {
@@ -194,13 +211,11 @@ function App() {
 
   const handlePlay = () => {
     if (result && audioBuffer) {
-      if (audioSourceRef.current) {
-        audioSourceRef.current.stop();
-      }
       playAnimation(result.mouthCues, audioBuffer);
     }
   };
 
+  // Play each new result once (audioBuffer is set before analysis starts)
   useEffect(() => {
     if (result && audioBuffer) {
       playAnimation(result.mouthCues, audioBuffer);
@@ -208,12 +223,9 @@ function App() {
   }, [result]);
 
   const handleModeChange = (newMode: ExecutionMode) => {
+    if (newMode === mode) return;
     setMode(newMode);
-    const modeLabel = newMode === 'single' ? 'Single Thread' :
-                      newMode === 'worker' ? 'Web Worker' :
-                      newMode === 'chunked' ? 'Chunked Workers' :
-                      'Streaming';
-    addLog(`Execution mode changed to: ${modeLabel}`, 'info');
+    addLog(`Execution mode changed to: ${modeLabel(newMode)}`, 'info');
   };
 
   return (
@@ -256,7 +268,7 @@ function App() {
               disabled={isAnalyzing || isRecording}
             >
               <div className="mode-title">Streaming</div>
-              <div className="mode-desc">Dynamic queue (real-time ready)</div>
+              <div className="mode-desc">Chunks with 500 ms context</div>
             </button>
           </div>
         </div>
@@ -295,7 +307,11 @@ function App() {
               onChange={(e) => setChunkSize(Number(e.target.value))}
               disabled={isAnalyzing || isRecording}
             />
-            <small>Smaller chunks = more parallelization, larger chunks = better context</small>
+            <small>
+              {mode === 'chunked'
+                ? 'Chunks are analysed alone: smaller chunks run more in parallel but lose accuracy at the edges'
+                : 'Each chunk is analysed with 500 ms of audio before and after it'}
+            </small>
           </div>
         )}
 
@@ -333,8 +349,11 @@ function App() {
           </label>
         </div>
 
-        <div className={`status ${isRecording ? 'recording' : isAnalyzing ? 'analyzing' : ''}`}>
-          {isRecording ? 'Recording... Speak now!' : isAnalyzing ? 'Analyzing audio...' : 'Ready to analyze audio'}
+        <div className={`status ${isRecording ? 'recording' : isAnalyzing || !isInitialized ? 'analyzing' : ''}`}>
+          {isRecording ? 'Recording... Speak now!'
+            : isAnalyzing ? 'Analyzing audio...'
+            : !isInitialized ? 'Initializing...'
+            : 'Ready to analyze audio'}
         </div>
 
         {/* Performance Metrics */}
@@ -429,6 +448,15 @@ function App() {
       </div>
     </div>
   );
+}
+
+function modeLabel(mode: ExecutionMode): string {
+  switch (mode) {
+    case 'single': return 'Single Thread (blocks UI)';
+    case 'worker': return 'Web Worker (non-blocking)';
+    case 'chunked': return 'Chunked Workers (parallel)';
+    case 'streaming': return 'Streaming (500 ms context and lookahead)';
+  }
 }
 
 export default App;

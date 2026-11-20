@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { recordAudio, loadAudio } from 'lip-sync-engine';
+  import type { LipSyncEngineResult, MouthCue } from 'lip-sync-engine';
   import { lipSyncEngineStore } from './stores/lipSyncEngine';
   import type { ExecutionMode } from './stores/lipSyncEngine';
 
@@ -17,8 +18,11 @@
   let audioBuffer: AudioBuffer | null = null;
   let logs: LogEntry[] = [];
   let logsEnd: HTMLDivElement;
+  // One AudioContext for all playback, closed on destroy
   let audioContext: AudioContext | null = null;
   let audioSource: AudioBufferSourceNode | null = null;
+  let animationFrame: number | null = null;
+  let lastPlayedResult: LipSyncEngineResult | null = null;
 
   const visemeNames: Record<string, string> = {
     X: 'Closed/Rest',
@@ -45,32 +49,63 @@
     setTimeout(() => logsEnd?.scrollIntoView({ behavior: 'smooth' }), 0);
   }
 
-  onMount(() => {
-    addLog('Initializing LipSyncEngine WASM module...', 'info');
-    addLog('Initializing WorkerPool...', 'info');
-    addLog('✅ WASM module loaded successfully', 'success');
-    addLog('✅ WorkerPool initialized', 'success');
-    addLog('Viseme images preloaded', 'info');
+  function modeLabel(mode: ExecutionMode): string {
+    switch (mode) {
+      case 'single': return 'Single Thread (blocks UI)';
+      case 'worker': return 'Web Worker (non-blocking)';
+      case 'chunked': return 'Chunked Workers (parallel)';
+      case 'streaming': return 'Streaming (500 ms context and lookahead)';
+    }
+  }
+
+  // Log when the selected mode starts and finishes initializing
+  let lastReady: boolean | null = null;
+  $: if ($lipSyncEngineStore.isInitialized !== lastReady) {
+    lastReady = $lipSyncEngineStore.isInitialized;
+    if (lastReady) addLog(`✅ ${modeLabel($lipSyncEngineStore.mode)} ready`, 'success');
+    else addLog(`Initializing ${modeLabel($lipSyncEngineStore.mode)}...`, 'info');
+  }
+
+  function stopPlayback() {
+    if (animationFrame !== null) {
+      cancelAnimationFrame(animationFrame);
+      animationFrame = null;
+    }
+    if (audioSource) {
+      audioSource.onended = null;
+      audioSource.stop();
+      audioSource = null;
+    }
+    currentViseme = 'X';
+    isPlaying = false;
+  }
+
+  onDestroy(() => {
+    stopPlayback();
+    audioContext?.close();
+    audioContext = null;
   });
 
-  function playAnimation(mouthCues: Array<{ start: number; end: number; value: string }>, buffer: AudioBuffer) {
-    if (!buffer) return;
+  function playAnimation(mouthCues: MouthCue[], buffer: AudioBuffer) {
+    stopPlayback();
 
-    isPlaying = true;
-    audioContext = new AudioContext();
-    const source = audioContext.createBufferSource();
+    if (!audioContext) audioContext = new AudioContext();
+    const ctx = audioContext;
+    void ctx.resume();
+
+    const source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(audioContext.destination);
-
+    source.connect(ctx.destination);
     audioSource = source;
 
-    const startTime = audioContext.currentTime;
-    source.start(0);
+    const startTime = ctx.currentTime;
+    source.start();
+    isPlaying = true;
 
     let currentCueIndex = 0;
 
     function updateViseme() {
-      const elapsed = audioContext!.currentTime - startTime;
+      const elapsed = ctx.currentTime - startTime;
 
       while (currentCueIndex < mouthCues.length && mouthCues[currentCueIndex].end < elapsed) {
         currentCueIndex++;
@@ -78,15 +113,17 @@
 
       if (currentCueIndex < mouthCues.length) {
         currentViseme = mouthCues[currentCueIndex].value;
-        requestAnimationFrame(updateViseme);
+        animationFrame = requestAnimationFrame(updateViseme);
       } else {
         currentViseme = 'X';
+        animationFrame = null;
       }
     }
 
     updateViseme();
 
     source.onended = () => {
+      audioSource = null;
       currentViseme = 'X';
       isPlaying = false;
     };
@@ -98,8 +135,7 @@
     audioBuffer = null;
     try {
       addLog('=== Starting Recording ===', 'info');
-      addLog('Microphone access granted', 'info');
-      addLog(`Recording ${$lipSyncEngineStore.recordingDuration} seconds...`, 'info');
+      addLog(`Recording ${$lipSyncEngineStore.recordingDuration} seconds (allow microphone access if asked)...`, 'info');
 
       const { pcm16, audioBuffer: buffer } = await recordAudio($lipSyncEngineStore.recordingDuration * 1000);
 
@@ -111,10 +147,7 @@
 
       addLog('=== Starting Analysis ===', 'info');
 
-      const modeDescription = $lipSyncEngineStore.mode === 'single' ? 'Single Thread (blocks UI)' :
-                             $lipSyncEngineStore.mode === 'worker' ? 'Web Worker (non-blocking)' :
-                             'Chunked Workers (parallel)';
-      addLog(`Mode: ${modeDescription}`, 'info');
+      addLog(`Mode: ${modeLabel($lipSyncEngineStore.mode)}`, 'info');
       addLog(`Analyzing ${pcm16.length} samples (${duration}s at 16kHz)${dialogText ? ' with dialog text' : ''}`, 'info');
 
       await lipSyncEngineStore.analyze(pcm16, {
@@ -151,10 +184,7 @@
 
       addLog('=== Starting Analysis ===', 'info');
 
-      const modeDescription = $lipSyncEngineStore.mode === 'single' ? 'Single Thread (blocks UI)' :
-                             $lipSyncEngineStore.mode === 'worker' ? 'Web Worker (non-blocking)' :
-                             'Chunked Workers (parallel)';
-      addLog(`Mode: ${modeDescription}`, 'info');
+      addLog(`Mode: ${modeLabel($lipSyncEngineStore.mode)}`, 'info');
       addLog(`Analyzing ${pcm16.length} samples (${duration}s at 16kHz)${dialogText ? ' with dialog text' : ''}`, 'info');
 
       await lipSyncEngineStore.analyze(pcm16, {
@@ -172,19 +202,20 @@
 
   function handlePlay() {
     if ($lipSyncEngineStore.result && audioBuffer) {
-      if (audioSource) {
-        audioSource.stop();
-      }
       playAnimation($lipSyncEngineStore.result.mouthCues, audioBuffer);
     }
   }
 
   function handleModeChange(newMode: ExecutionMode) {
+    if (newMode === $lipSyncEngineStore.mode) return;
     lipSyncEngineStore.setMode(newMode);
-    addLog(`Execution mode changed to: ${newMode === 'single' ? 'Single Thread' : newMode === 'worker' ? 'Web Worker' : 'Chunked Workers'}`, 'info');
+    addLog(`Execution mode changed to: ${modeLabel(newMode)}`, 'info');
   }
 
-  $: if ($lipSyncEngineStore.result && audioBuffer) {
+  // Play each new result once. Without the check this block would run again
+  // on every store update (mode, sliders) and replay the audio.
+  $: if ($lipSyncEngineStore.result && audioBuffer && $lipSyncEngineStore.result !== lastPlayedResult) {
+    lastPlayedResult = $lipSyncEngineStore.result;
     playAnimation($lipSyncEngineStore.result.mouthCues, audioBuffer);
   }
 </script>
@@ -225,6 +256,15 @@
           <div class="mode-title">Chunked Workers</div>
           <div class="mode-desc">Parallel processing (~5x faster)</div>
         </button>
+        <button
+          class="mode-btn"
+          class:active={$lipSyncEngineStore.mode === 'streaming'}
+          on:click={() => handleModeChange('streaming')}
+          disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
+        >
+          <div class="mode-title">Streaming</div>
+          <div class="mode-desc">Chunks with 500 ms context</div>
+        </button>
       </div>
     </div>
 
@@ -246,8 +286,8 @@
       <small>Adjust recording duration (5-60 seconds)</small>
     </div>
 
-    <!-- Chunk Settings - Only visible in chunked mode -->
-    {#if $lipSyncEngineStore.mode === 'chunked'}
+    <!-- Chunk Settings - Only visible in chunked or streaming mode -->
+    {#if $lipSyncEngineStore.mode === 'chunked' || $lipSyncEngineStore.mode === 'streaming'}
       <div class="chunk-settings">
         <label for="chunkSize">
           Chunk Size (seconds): {$lipSyncEngineStore.chunkSize}s
@@ -262,7 +302,11 @@
           on:input={(e) => lipSyncEngineStore.setChunkSize(Number(e.currentTarget.value))}
           disabled={$lipSyncEngineStore.isAnalyzing || isRecording}
         />
-        <small>Smaller chunks = more parallelization, larger chunks = better context</small>
+        <small>
+          {$lipSyncEngineStore.mode === 'chunked'
+            ? 'Chunks are analysed alone: smaller chunks run more in parallel but lose accuracy at the edges'
+            : 'Each chunk is analysed with 500 ms of audio before and after it'}
+        </small>
       </div>
     {/if}
 
@@ -297,8 +341,11 @@
       </label>
     </div>
 
-    <div class="status" class:recording={isRecording} class:analyzing={$lipSyncEngineStore.isAnalyzing}>
-      {isRecording ? 'Recording... Speak now!' : $lipSyncEngineStore.isAnalyzing ? 'Analyzing audio...' : 'Ready to analyze audio'}
+    <div class="status" class:recording={isRecording} class:analyzing={$lipSyncEngineStore.isAnalyzing || !$lipSyncEngineStore.isInitialized}>
+      {isRecording ? 'Recording... Speak now!'
+        : $lipSyncEngineStore.isAnalyzing ? 'Analyzing audio...'
+        : !$lipSyncEngineStore.isInitialized ? 'Initializing...'
+        : 'Ready to analyze audio'}
     </div>
 
     <!-- Performance Metrics -->
@@ -360,7 +407,7 @@
           </button>
         </div>
         <div class="cues-list">
-          {#each $lipSyncEngineStore.result.mouthCues as cue, index}
+          {#each $lipSyncEngineStore.result.mouthCues as cue}
             <div class="cue">
               <span class="cue-time">
                 {cue.start.toFixed(2)}s - {cue.end.toFixed(2)}s

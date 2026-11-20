@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, nextTick } from 'vue';
+import { ref, watch, nextTick, onUnmounted } from 'vue';
 import { recordAudio, loadAudio } from 'lip-sync-engine';
+import type { MouthCue } from 'lip-sync-engine';
 import { useLipSyncEngine } from './composables/useLipSyncEngine';
 import type { ExecutionMode } from './composables/useLipSyncEngine';
 
@@ -14,6 +15,7 @@ const {
   analyze,
   result,
   isAnalyzing,
+  isInitialized,
   error,
   metrics,
   reset,
@@ -22,8 +24,7 @@ const {
   chunkSize,
   setChunkSize,
   recordingDuration,
-  setRecordingDuration,
-  getWorkerStats
+  setRecordingDuration
 } = useLipSyncEngine();
 
 const dialogText = ref('');
@@ -33,8 +34,10 @@ const isPlaying = ref(false);
 const audioBuffer = ref<AudioBuffer | null>(null);
 const logs = ref<LogEntry[]>([]);
 const logsEnd = ref<HTMLElement | null>(null);
+// One AudioContext for all playback, closed on unmount
 let audioContext: AudioContext | null = null;
 let audioSource: AudioBufferSourceNode | null = null;
+let animationFrame: number | null = null;
 
 const visemeNames: Record<string, string> = {
   X: 'Closed/Rest',
@@ -63,32 +66,65 @@ const addLog = (message: string, type: LogEntry['type'] = 'info') => {
   });
 };
 
-onMounted(() => {
-  addLog('Initializing LipSyncEngine WASM module...', 'info');
-  addLog('Initializing WorkerPool...', 'info');
-  addLog('✅ WASM module loaded successfully', 'success');
-  addLog('✅ WorkerPool initialized', 'success');
-  addLog('Viseme images preloaded', 'info');
+const modeLabel = (m: ExecutionMode): string => {
+  switch (m) {
+    case 'single': return 'Single Thread (blocks UI)';
+    case 'worker': return 'Web Worker (non-blocking)';
+    case 'chunked': return 'Chunked Workers (parallel)';
+    case 'streaming': return 'Streaming (500 ms context and lookahead)';
+  }
+};
+
+// Log when the selected mode starts and finishes initializing
+watch(
+  isInitialized,
+  (ready) => {
+    if (ready) addLog(`✅ ${modeLabel(mode.value)} ready`, 'success');
+    else addLog(`Initializing ${modeLabel(mode.value)}...`, 'info');
+  },
+  { immediate: true }
+);
+
+const stopPlayback = () => {
+  if (animationFrame !== null) {
+    cancelAnimationFrame(animationFrame);
+    animationFrame = null;
+  }
+  if (audioSource) {
+    audioSource.onended = null;
+    audioSource.stop();
+    audioSource = null;
+  }
+  currentViseme.value = 'X';
+  isPlaying.value = false;
+};
+
+onUnmounted(() => {
+  stopPlayback();
+  audioContext?.close();
+  audioContext = null;
 });
 
-const playAnimation = (mouthCues: Array<{ start: number; end: number; value: string }>, buffer: AudioBuffer) => {
-  if (!buffer) return;
+const playAnimation = (mouthCues: MouthCue[], buffer: AudioBuffer) => {
+  stopPlayback();
 
-  isPlaying.value = true;
-  audioContext = new AudioContext();
-  const source = audioContext.createBufferSource();
+  if (!audioContext) audioContext = new AudioContext();
+  const ctx = audioContext;
+  void ctx.resume();
+
+  const source = ctx.createBufferSource();
   source.buffer = buffer;
-  source.connect(audioContext.destination);
-
+  source.connect(ctx.destination);
   audioSource = source;
 
-  const startTime = audioContext.currentTime;
-  source.start(0);
+  const startTime = ctx.currentTime;
+  source.start();
+  isPlaying.value = true;
 
   let currentCueIndex = 0;
 
   const updateViseme = () => {
-    const elapsed = audioContext!.currentTime - startTime;
+    const elapsed = ctx.currentTime - startTime;
 
     while (currentCueIndex < mouthCues.length && mouthCues[currentCueIndex].end < elapsed) {
       currentCueIndex++;
@@ -96,15 +132,17 @@ const playAnimation = (mouthCues: Array<{ start: number; end: number; value: str
 
     if (currentCueIndex < mouthCues.length) {
       currentViseme.value = mouthCues[currentCueIndex].value;
-      requestAnimationFrame(updateViseme);
+      animationFrame = requestAnimationFrame(updateViseme);
     } else {
       currentViseme.value = 'X';
+      animationFrame = null;
     }
   };
 
   updateViseme();
 
   source.onended = () => {
+    audioSource = null;
     currentViseme.value = 'X';
     isPlaying.value = false;
   };
@@ -116,8 +154,7 @@ const handleRecord = async () => {
   audioBuffer.value = null;
   try {
     addLog('=== Starting Recording ===', 'info');
-    addLog('Microphone access granted', 'info');
-    addLog(`Recording ${recordingDuration.value} seconds...`, 'info');
+    addLog(`Recording ${recordingDuration.value} seconds (allow microphone access if asked)...`, 'info');
 
     const { pcm16, audioBuffer: buffer } = await recordAudio(recordingDuration.value * 1000);
 
@@ -129,10 +166,7 @@ const handleRecord = async () => {
 
     addLog('=== Starting Analysis ===', 'info');
 
-    const modeDescription = mode.value === 'single' ? 'Single Thread (blocks UI)' :
-                           mode.value === 'worker' ? 'Web Worker (non-blocking)' :
-                           'Chunked Workers (parallel)';
-    addLog(`Mode: ${modeDescription}`, 'info');
+    addLog(`Mode: ${modeLabel(mode.value)}`, 'info');
     addLog(`Analyzing ${pcm16.length} samples (${duration}s at 16kHz)${dialogText.value ? ' with dialog text' : ''}`, 'info');
 
     await analyze(pcm16, {
@@ -169,10 +203,7 @@ const handleFileUpload = async (event: Event) => {
 
     addLog('=== Starting Analysis ===', 'info');
 
-    const modeDescription = mode.value === 'single' ? 'Single Thread (blocks UI)' :
-                           mode.value === 'worker' ? 'Web Worker (non-blocking)' :
-                           'Chunked Workers (parallel)';
-    addLog(`Mode: ${modeDescription}`, 'info');
+    addLog(`Mode: ${modeLabel(mode.value)}`, 'info');
     addLog(`Analyzing ${pcm16.length} samples (${duration}s at 16kHz)${dialogText.value ? ' with dialog text' : ''}`, 'info');
 
     await analyze(pcm16, {
@@ -190,16 +221,14 @@ const handleFileUpload = async (event: Event) => {
 
 const handlePlay = () => {
   if (result.value && audioBuffer.value) {
-    if (audioSource) {
-      audioSource.stop();
-    }
     playAnimation(result.value.mouthCues, audioBuffer.value);
   }
 };
 
 const handleModeChange = (newMode: ExecutionMode) => {
+  if (newMode === mode.value) return;
   setMode(newMode);
-  addLog(`Execution mode changed to: ${newMode === 'single' ? 'Single Thread' : newMode === 'worker' ? 'Web Worker' : 'Chunked Workers'}`, 'info');
+  addLog(`Execution mode changed to: ${modeLabel(newMode)}`, 'info');
 };
 
 watch(result, (newResult) => {
@@ -243,6 +272,14 @@ watch(result, (newResult) => {
             <div class="mode-title">Chunked Workers</div>
             <div class="mode-desc">Parallel processing (~5x faster)</div>
           </button>
+          <button
+            :class="['mode-btn', { active: mode === 'streaming' }]"
+            @click="() => handleModeChange('streaming')"
+            :disabled="isAnalyzing || isRecording"
+          >
+            <div class="mode-title">Streaming</div>
+            <div class="mode-desc">Chunks with 500 ms context</div>
+          </button>
         </div>
       </div>
 
@@ -264,8 +301,8 @@ watch(result, (newResult) => {
         <small>Adjust recording duration (5-60 seconds)</small>
       </div>
 
-      <!-- Chunk Settings - Only visible in chunked mode -->
-      <div v-if="mode === 'chunked'" class="chunk-settings">
+      <!-- Chunk Settings - Only visible in chunked or streaming mode -->
+      <div v-if="mode === 'chunked' || mode === 'streaming'" class="chunk-settings">
         <label for="chunkSize">
           Chunk Size (seconds): {{ chunkSize }}s
         </label>
@@ -279,7 +316,11 @@ watch(result, (newResult) => {
           @input="(e) => setChunkSize(Number((e.target as HTMLInputElement).value))"
           :disabled="isAnalyzing || isRecording"
         />
-        <small>Smaller chunks = more parallelization, larger chunks = better context</small>
+        <small>
+          {{ mode === 'chunked'
+            ? 'Chunks are analysed alone: smaller chunks run more in parallel but lose accuracy at the edges'
+            : 'Each chunk is analysed with 500 ms of audio before and after it' }}
+        </small>
       </div>
 
       <div class="input-group">
@@ -313,8 +354,11 @@ watch(result, (newResult) => {
         </label>
       </div>
 
-      <div :class="['status', { recording: isRecording, analyzing: isAnalyzing }]">
-        {{ isRecording ? 'Recording... Speak now!' : isAnalyzing ? 'Analyzing audio...' : 'Ready to analyze audio' }}
+      <div :class="['status', { recording: isRecording, analyzing: isAnalyzing || !isInitialized }]">
+        {{ isRecording ? 'Recording... Speak now!'
+          : isAnalyzing ? 'Analyzing audio...'
+          : !isInitialized ? 'Initializing...'
+          : 'Ready to analyze audio' }}
       </div>
 
       <!-- Performance Metrics -->
