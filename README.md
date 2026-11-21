@@ -143,7 +143,7 @@ const quick = await analyze(pcm16, options);
 // Start the pool yourself only to choose the worker count or self-hosted paths.
 const inWorker = await analyzeAsync(pcm16, options);
 
-// Main-thread class. init() is optional: analyze() calls it with the default paths.
+// Main-thread class. init() is optional: analyze() calls it with the options of the last init(), or the default paths.
 const engine = LipSyncEngine.getInstance();
 await engine.init();
 const fromEngine = await engine.analyze(pcm16, options);
