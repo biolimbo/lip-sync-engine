@@ -1,6 +1,6 @@
 {
   "name": "lip-sync-engine",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "WebAssembly port of Rhubarb Lip Sync for the browser. Analyzes speech audio into timed mouth shapes using PocketSphinx speech recognition, with a TypeScript API, Web Worker pool and streaming analysis.",
   "author": "Santiago Forero",
   "license": "MIT",

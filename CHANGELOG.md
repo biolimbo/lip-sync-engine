@@ -4,7 +4,7 @@ All notable changes to `lip-sync-engine` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.0.1] - 2026-11-21
 
 ### Fixed
 
@@ -131,7 +131,7 @@ First release available on npm.
 - Audio utilities: `recordAudio()`, `loadAudio()`, `audioBufferToInt16()`, `float32ToInt16()`, and
   `resample()`.
 
-[Unreleased]: https://github.com/biolimbo/lip-sync-engine/compare/v2.0.0...HEAD
+[2.0.1]: https://github.com/biolimbo/lip-sync-engine/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/biolimbo/lip-sync-engine/compare/v1.0.3...v2.0.0
 [1.0.3]: https://github.com/biolimbo/lip-sync-engine/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/biolimbo/lip-sync-engine/compare/v1.0.1...v1.0.2
