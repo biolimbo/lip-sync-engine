@@ -3,7 +3,7 @@
  * This file runs inside a Web Worker context and handles analysis requests
  */
 
-import { WasmLoader, compileWasm } from './WasmLoader';
+import { compileWasm, fetchDataFile, loadModuleWithAssets } from './WasmLoader';
 import { applyExtendedShapes } from './extendedShapes';
 import type { LipSyncEngineModule, LipSyncEngineOptions, LipSyncEngineResult, RecognizerKind } from './types';
 
@@ -88,18 +88,16 @@ async function initializeWorker(
   unhandled.catch(() => {});
   self.addEventListener('unhandledrejection', onUnhandled);
   try {
-    const compiled = message.wasmModule ?? (message.returnModule ? await compileWasm(wasmPath) : undefined);
+    // Download the .data file while the .wasm compiles. Both are compiled or
+    // downloaded once here; the loader uses these instead of starting its own.
+    const data = message.dataBuffer ? Promise.resolve(message.dataBuffer) : fetchDataFile(dataPath);
+    data.catch(() => {}); // a failure rejects the startup through the loader
+    const compiled = message.wasmModule ? Promise.resolve(message.wasmModule) : compileWasm(wasmPath);
     wasmModule = await Promise.race([
       unhandled,
-      WasmLoader.loadModule({
-        wasmPath,
-        dataPath,
-        jsPath,
-        wasmModule: compiled,
-        dataBuffer: message.dataBuffer
-      })
+      loadModuleWithAssets({ wasmPath, dataPath, jsPath }, { data, compiled })
     ]);
-    const sendBack = message.returnModule ? compiled : undefined;
+    const sendBack = message.returnModule ? await compiled : undefined;
 
     // Initialize the engine
     const modelsPathPtr = wasmModule._malloc(modelsPath.length + 1);

@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { WasmLoader, fetchDataFile } from '../src/ts/WasmLoader';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { WasmLoader, compileWasm, fetchDataFile, loadModuleWithAssets } from '../src/ts/WasmLoader';
 import type { LipSyncEngineModule } from '../src/ts/types';
 
 /**
@@ -168,5 +168,76 @@ describe('WasmLoader.load', () => {
     const fresh = await WasmLoader.load(PATHS);
     expect(fresh).not.toBe(firstModule);
     expect(factoryCalls).toHaveLength(2);
+  });
+});
+
+describe('compileWasm', () => {
+  const WASM_PATH = 'https://example.test/lip-sync-engine.wasm';
+  const compiledModule = {} as WebAssembly.Module;
+  type Compile = (source: unknown) => Promise<WebAssembly.Module>;
+  let compile: Mock<Parameters<Compile>, ReturnType<Compile>>;
+  let compileStreaming: Mock<Parameters<Compile>, ReturnType<Compile>>;
+
+  function stubWasmFetch(status: number, contentType: string | null): void {
+    vi.stubGlobal('fetch', async () => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: (name: string) => (name === 'Content-Type' ? contentType : null) },
+      arrayBuffer: async () => new ArrayBuffer(8),
+    }));
+  }
+
+  beforeEach(() => {
+    compile = vi.fn<Parameters<Compile>, ReturnType<Compile>>(async () => compiledModule);
+    compileStreaming = vi.fn<Parameters<Compile>, ReturnType<Compile>>(async () => compiledModule);
+    vi.stubGlobal('WebAssembly', { compile, compileStreaming });
+  });
+
+  it('resolves undefined for an HTTP error status, without compiling', async () => {
+    stubWasmFetch(404, 'text/html');
+
+    await expect(compileWasm(WASM_PATH)).resolves.toBeUndefined();
+    expect(compile).not.toHaveBeenCalled();
+    expect(compileStreaming).not.toHaveBeenCalled();
+  });
+
+  it('compiles while streaming when the server sends application/wasm', async () => {
+    stubWasmFetch(200, 'application/wasm');
+
+    await expect(compileWasm(WASM_PATH)).resolves.toBe(compiledModule);
+    expect(compileStreaming).toHaveBeenCalledTimes(1);
+    expect(compile).not.toHaveBeenCalled();
+  });
+
+  it('compiles the downloaded bytes for any other content type', async () => {
+    stubWasmFetch(200, 'application/octet-stream');
+
+    await expect(compileWasm(WASM_PATH)).resolves.toBe(compiledModule);
+    expect(compile).toHaveBeenCalledWith(expect.any(ArrayBuffer));
+    expect(compileStreaming).not.toHaveBeenCalled();
+  });
+
+  it('resolves undefined when the compile fails', async () => {
+    stubWasmFetch(200, 'application/wasm');
+    compileStreaming.mockRejectedValue(new Error('bad module'));
+
+    await expect(compileWasm(WASM_PATH)).resolves.toBeUndefined();
+  });
+});
+
+describe('loadModuleWithAssets', () => {
+  it('uses the downloads it is given instead of starting its own', async () => {
+    const calls = stubFetch();
+    const { wasmModule: _unused, ...paths } = PATHS;
+
+    await loadModuleWithAssets(paths, {
+      data: Promise.resolve(new ArrayBuffer(4)),
+      compiled: Promise.resolve(undefined),
+    });
+
+    // No .data download and no second .wasm compile; Emscripten loads the .wasm itself
+    expect(calls).toHaveLength(0);
+    expect(factoryCalls).toHaveLength(1);
+    expect(factoryCalls[0].instantiateWasm).toBeUndefined();
   });
 });
