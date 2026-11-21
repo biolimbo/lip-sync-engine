@@ -62,9 +62,9 @@ const lipSyncEngine = LipSyncEngine.getInstance();
 
 #### `init(options?)`
 
-Loads the WASM module and starts the engine. Calling it is optional: `analyze()` calls it with the default (CDN) paths. Call it yourself, before any `analyze()`, to load self-hosted files or to load the engine ahead of the first analysis.
+Loads the WASM module and starts the engine. Calling it is optional: `analyze()` calls it without options, which loads the default (CDN) paths. Call it yourself, before any `analyze()`, to load self-hosted files or to load the engine ahead of the first analysis.
 
-The module loads once per page. Later calls, including calls on a new instance after `destroy()`, share that load and ignore their options, so the options of the first load win. `analyzeAsync()` does not use this module or its options.
+The module loads once per page. Later calls, including calls on a new instance after `destroy()`, share that load and ignore their options, so the options of the first load win. A failed load is not kept: the next `init()` or `analyze()` loads again. `init(options)` loads with the given options merged over those of earlier `init(options)` calls, so a retry can pass only the path it fixes. `init()` without options, and `analyze()`, load with those stored options, or with the default paths if there are none, so a self-hosted app that retries through `analyze()` does not switch to the CDN. [`destroy()`](#destroy) forgets those options. `analyzeAsync()` does not use this module or its options.
 
 **Parameters:**
 - `options?: WasmLoaderOptions`: file paths and preloaded assets (see [`WasmLoaderOptions`](#wasmloaderoptions)). Paths default to the [default asset URLs](#default-asset-urls).
@@ -73,9 +73,10 @@ The module loads once per page. Later calls, including calls on a new instance a
 
 **Throws:** the promise rejects if the engine cannot load:
 - `Error('Failed to load WASM module from <jsPath>')` when the loader script cannot be fetched.
+- `Error('Failed to load model data from <dataPath>: <reason>')` when the model file cannot be downloaded.
 - `Error('LipSyncEngine initialization failed: <reason>')` when the engine cannot start.
 
-A failed load stays cached for the page. Reload the page to retry.
+After a rejection, fix the cause and call `init()` again; no page reload is needed.
 
 **Example:**
 ```typescript
@@ -149,7 +150,7 @@ const result = await LipSyncEngine.getInstance().analyzeAsync(pcm16, {
 
 #### `destroy()`
 
-Drops this instance; the next `getInstance()` returns a new one. The loaded WASM module stays cached and is reused by later instances. Call [`WasmLoader.reset()`](#reset) as well to let it be garbage-collected. Does not affect the `WorkerPool`.
+Drops this instance and the options passed to `init()`; the next `getInstance()` returns a new one. The loaded WASM module stays cached and is reused by later instances. Call [`WasmLoader.reset()`](#reset) as well to let it be garbage-collected. Does not affect the `WorkerPool`.
 
 **Parameters:** none.
 
@@ -231,7 +232,7 @@ const pool = WorkerPool.getInstance(2, '/lip-sync-engine/worker.js');
 
 #### `init(options?)`
 
-Starts the pool with one worker. Must finish before `analyze()`, `analyzeChunks()`, `createStreamAnalyzer()`, or `warmup()`. Use `warmup()` to start the remaining workers.
+Starts the pool with one worker. Must finish before `analyze()`, `analyzeChunks()`, `createStreamAnalyzer()`, or `warmup()`. Use `warmup()` to start the remaining workers. The promise rejects if the worker cannot load its script or the engine files; it does not stay pending.
 
 Calls made while startup is in progress share that startup, and calls made after the pool has started resolve at once. Both ignore their options: the options of the call that started the pool apply. After a failed startup, or after every worker has failed, `init()` starts the pool again.
 
@@ -430,7 +431,7 @@ Asks each worker in the pool for the size of its WebAssembly memory. This is mem
 - `workers`: WebAssembly memory of each worker currently in the pool, in bytes. Empty when the pool has no workers.
 - `totalBytes`: sum of `workers`.
 
-If `destroy()` is called while the request is pending, the pending entries resolve as `0`.
+A worker answers between jobs, so the promise waits for the analyses running when it is called. A worker that stops before it answers (it crashes, or `destroy()` is called) counts as `0`.
 
 **Example:**
 ```typescript
@@ -466,7 +467,7 @@ Errors other than `WorkerPoolDestroyedError` are plain `Error` objects. Match th
 |---|---|
 | `WorkerPool not initialized. Call init() first.` | `warmup()`, `analyze()`, and `analyzeChunks()` reject, and `createStreamAnalyzer()` throws, when `init()` has not finished (also after `destroy()`, or after every worker has failed). |
 | `Worker failed to load: <detail>` | `init()` or `warmup()`: a worker's script failed to load (for example a wrong `workerScriptUrl` or missing CORS headers), or the worker threw while starting. |
-| `Worker initialization failed: <detail>` | `init()` or `warmup()`: a worker could not load the engine files or start the engine (for example a wrong `wasmPath`, `dataPath`, or `jsPath`, or missing CORS headers). |
+| `Worker initialization failed: <detail>` | `init()` or `warmup()`: a worker could not load the engine files or start the engine (for example a wrong `wasmPath`, `dataPath`, or `jsPath`, or missing CORS headers). When the model file fails to download, `<detail>` is `Failed to load model data from <dataPath>: <reason>`; when the pool cannot read the worker's reply, it is `could not read the worker's reply`. |
 | `Worker crashed: <detail>` | The job a worker was running when it crashed. The pool removes that worker and does not replace it on its own; call `warmup()` to start a replacement, or `init()` if it was the last worker. |
 | `All WorkerPool workers failed. Call init() to restart the pool.` | Queued jobs, once every worker has failed and none is starting. Call `init()` to start the pool again. |
 | `WorkerPoolDestroyedError` | Pending promises when `destroy()` is called. See [WorkerPoolDestroyedError](#workerpooldestroyederror). |
@@ -534,7 +535,7 @@ When analysis starts depends on the mode. With separate chunks, the chunk is que
 
 **Returns:** `number`: the chunk's index, for `getResult()` and the `finalize()` results.
 
-**Throws:** `Error('Cannot add chunks after finalize() has been called')` after `end()` or `finalize()`.
+**Throws:** `Error('Cannot add chunks after end() has been called')` after `end()`, or `Error('Cannot add chunks after finalize() has been called')` after `finalize()`.
 
 **Example:**
 ```typescript
@@ -652,14 +653,17 @@ declare class WasmLoader {
 
 #### `load(options?)`
 
-Loads the module once per page and caches it. Later calls return the cached module, or the load in progress, and ignore their options. `LipSyncEngine.init()` loads through this method. A failed load is also cached; reload the page to retry.
+Loads the module once per page and caches it. Later calls return the cached module, or the load in progress, and ignore their options. `LipSyncEngine.init()` loads through this method. A failed load is not cached: the next call loads again. On the main thread the loader script (`jsPath`) is added to the page once and reused by later loads; if it fails to load, it is removed from the page and the `.data` and `.wasm` downloads are canceled.
 
 **Parameters:**
 - `options?: WasmLoaderOptions`: file paths and preloaded assets (see [`WasmLoaderOptions`](#wasmloaderoptions)).
 
 **Returns:** `Promise<LipSyncEngineModule>` (see [`LipSyncEngineModule`](#lipsyncenginemodule)).
 
-**Throws:** the promise rejects with `Error('Failed to load WASM module from <jsPath>')` when the loader script cannot be fetched, or with the error raised while the module starts.
+**Throws:** the promise rejects with:
+- `Error('Failed to load WASM module from <jsPath>')` when the loader script cannot be fetched.
+- `Error('Failed to load model data from <dataPath>: <reason>')` when the `.data` file cannot be downloaded (`<reason>` is `HTTP <status>` or the network error). A network error is retried once, bypassing the HTTP cache, before the promise rejects.
+- The error raised while the module starts.
 
 **Example:**
 ```typescript
@@ -688,7 +692,7 @@ const module = await WasmLoader.loadModule({ jsPath: '/lip-sync-engine/lip-sync-
 
 #### `reset()`
 
-Drops the module cached by `load()`, so it can be garbage-collected once nothing else holds it, and the next `load()` loads again. Call it after [`LipSyncEngine.destroy()`](#destroy) to release the engine's memory.
+Drops the module cached by `load()`, so it can be garbage-collected once nothing else holds it, and the next `load()` loads again. A load in progress when `reset()` is called still resolves for its callers but is not cached. Call it after [`LipSyncEngine.destroy()`](#destroy) to release the engine's memory.
 
 **Parameters:** none.
 
@@ -708,7 +712,7 @@ WasmLoader.reset();
 
 ### `analyze(pcm16, options?)`
 
-Shorthand for `LipSyncEngine.getInstance().analyze(pcm16, options)`: analyzes on the main thread, loading the engine with the default paths if needed.
+Shorthand for `LipSyncEngine.getInstance().analyze(pcm16, options)`: analyzes on the main thread, loading the engine if needed with the options of an earlier `init(options)` call, or with the default paths if there was none.
 
 **Parameters:**
 - `pcm16: Int16Array`: mono 16-bit PCM audio.

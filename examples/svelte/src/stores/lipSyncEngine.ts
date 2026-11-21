@@ -87,9 +87,8 @@ interface LipSyncEngineState {
   isAnalyzing: boolean;
   isInitialized: boolean;
   /**
-   * Set when the selected mode failed to start. The library keeps a failed
-   * WASM load, so Single Thread needs a page reload; a worker pool that failed
-   * to start tries again when a worker mode is selected again.
+   * Set when the selected mode failed to start. The library does not keep a
+   * failed startup, so selecting the mode again tries again.
    */
   initError: Error | null;
   /** True after destroy(), until the next analyze() or mode change starts a mode again */

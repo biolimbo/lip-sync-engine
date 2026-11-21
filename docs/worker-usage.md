@@ -509,7 +509,7 @@ Every pool error message, and when it occurs, is listed under [WorkerPool Errors
 
 - [`WorkerPoolDestroyedError`](./api-reference.md#workerpooldestroyederror): expected during teardown. Ignore it with `error instanceof WorkerPoolDestroyedError`; the next `getInstance()` call creates a new pool.
 - `WorkerPool not initialized. Call init() first.`: await `init()` before analyzing or calling `warmup()`.
-- `Worker failed to load: ...` or `Worker initialization failed: ...`: fix the worker script URL, the WASM paths, or the CORS headers (see [CORS Issues](#cors-issues)), then call `init()` again. A failed pool startup is not cached.
+- `Worker failed to load: ...` or `Worker initialization failed: ...`: fix the worker script URL, the WASM paths, or the CORS headers (see [CORS Issues](#cors-issues)), then call `init()` again, or `warmup()` if the failure came from `warmup()` (after `init()` has succeeded, `init()` returns at once and starts no workers). A failed pool startup is not cached.
 - `Worker crashed: ...`: any other workers keep running. Call `warmup()` to start a replacement, or `init()` if it was the last worker.
 - `All WorkerPool workers failed. Call init() to restart the pool.`: call `init()` (and `warmup()`) again.
 

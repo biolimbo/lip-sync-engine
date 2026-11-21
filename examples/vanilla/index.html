@@ -540,11 +540,10 @@
     // pool. Each starts on its own, so one failing leaves the other usable.
     let startupDone = false; // both startups in init() have finished
     let engineReady = false;
-    // The library keeps a failed main-thread WASM load, so only a reload
-    // retries it.
+    // Failed startups are not kept by the library: selecting the mode again
+    // tries again.
     let engineError = null;
     let poolReady = false;
-    // A failed pool startup is not kept: selecting a worker mode tries again.
     let poolError = null;
     // Set when chunked mode's extra workers failed to start. Selecting chunked
     // mode again tries again.
@@ -619,7 +618,9 @@
         currentMode = btn.dataset.mode;
         chunkSettings.style.display = currentMode === 'chunked' ? 'block' : 'none';
         workerMetricEl.style.display = currentMode === 'chunked' ? 'flex' : 'none';
-        warmupError = null; // selecting chunked mode again retries its workers
+        // Selecting a mode again retries what failed to start for it
+        engineError = null;
+        warmupError = null;
         showModeState();
       });
     });
@@ -635,6 +636,17 @@
       updateControls();
     }
 
+    // Loads the main-thread engine. A failed load can be retried.
+    async function startEngine() {
+      engineError = null;
+      try {
+        await lipSyncEngine.init(WASM_PATHS);
+        engineReady = true;
+      } catch (err) {
+        engineError = err;
+      }
+    }
+
     // init() starts the pool's first worker. Concurrent calls share one
     // startup, and a failed startup can be retried.
     async function startPool() {
@@ -647,7 +659,7 @@
       }
     }
 
-    // Show whether the selected mode can run, starting the workers it still
+    // Show whether the selected mode can run, starting the engine or workers it still
     // needs. Each call gets a number, so a call that a later mode change
     // superseded leaves the status alone.
     let modeStateVersion = 0;
@@ -658,7 +670,13 @@
       hideError();
       const mode = currentMode;
       if (mode === 'single') {
-        if (engineError) failStartup(engineError, 'Reload the page to retry.');
+        if (!engineReady && !engineError) {
+          setStatus('Starting engine...', 'analyzing');
+          await startEngine();
+          updateControls();
+          if (version !== modeStateVersion) return;
+        }
+        if (engineError) failStartup(engineError, 'Switch modes or reload the page to retry.');
         else setStatus(READY_TEXT, 'success');
         return;
       }
@@ -708,12 +726,7 @@
       }
 
       lipSyncEngine = LipSyncEngine.getInstance();
-      try {
-        await lipSyncEngine.init(WASM_PATHS);
-        engineReady = true;
-      } catch (err) {
-        engineError = err;
-      }
+      await startEngine();
 
       workerPool = WorkerPool.getInstance(MAX_WORKERS);
       await startPool();

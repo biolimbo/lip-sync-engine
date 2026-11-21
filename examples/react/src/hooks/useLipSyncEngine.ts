@@ -96,8 +96,8 @@ export function useLipSyncEngine() {
   const initError = initFailure?.mode === mode ? initFailure.error : null;
 
   // Start what the selected mode needs. Nothing is torn down when the mode
-  // changes or the component unmounts. A worker pool that failed to start
-  // tries again here, so switching back to a failed worker mode retries it.
+  // changes or the component unmounts. The library does not keep a failed
+  // startup, so switching back to a mode that failed to start retries it.
   useEffect(() => {
     let current = true;
     setInitFailure(null);

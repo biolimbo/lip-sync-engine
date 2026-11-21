@@ -4,7 +4,7 @@
  */
 
 /**
- * Convert Float32Array to Int16Array PCM
+ * Convert float samples to 16-bit PCM. Values outside -1 to 1 are clipped.
  */
 export function float32ToInt16(float32: Float32Array): Int16Array {
   const int16 = new Int16Array(float32.length);
@@ -18,7 +18,8 @@ export function float32ToInt16(float32: Float32Array): Int16Array {
 }
 
 /**
- * Convert AudioBuffer to Int16Array PCM
+ * Convert the first channel of an AudioBuffer to 16-bit PCM, resampling it
+ * with resample() when its rate differs from targetSampleRate.
  * @param audioBuffer - Web Audio API AudioBuffer
  * @param targetSampleRate - Target sample rate (default: 16000)
  * @returns Int16Array PCM data
@@ -43,8 +44,9 @@ export function audioBufferToInt16(
 }
 
 /**
- * Simple linear resampling
- * For better quality, consider using a dedicated library
+ * Change the sample rate by picking the nearest earlier sample, without
+ * filtering. Returns `input` itself when the rates are equal. Use a dedicated
+ * resampler when audio quality matters.
  *
  * @param input - Input audio samples
  * @param fromRate - Source sample rate

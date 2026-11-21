@@ -1,6 +1,6 @@
 import type { LipSyncEngineModule } from './types';
 
-/** All nine shapes; the engine's default since 2.0.0 */
+/** All nine shapes; the engine's default */
 export const DEFAULT_EXTENDED_SHAPES = 'GHX';
 
 const current = new WeakMap<LipSyncEngineModule, string>();

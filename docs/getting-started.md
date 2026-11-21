@@ -354,7 +354,7 @@ blocks it, or when the app must work offline or on an internal network.
    Copy the files again whenever you upgrade the package.
 
 2. Pass the paths to `LipSyncEngine.init()` before any `analyze()` call. `analyze()` loads the
-   default CDN paths if the engine is not initialized yet, and options passed after the first load
+   default CDN paths if `init()` was not called with paths, and options passed after the first load
    are ignored.
 
 3. If you use `WorkerPool` or `analyzeAsync()`, pass the same paths plus `workerScriptUrl` to
@@ -380,9 +380,11 @@ await WorkerPool.getInstance(2).init({
 ```
 
 Use root-relative paths (starting with `/`) or full URLs. If the files are on another origin, that
-server must send CORS headers (`Access-Control-Allow-Origin`) for them. If `LipSyncEngine` fails to
-load the files, the failure is cached for the page: fix the paths, then reload the page to retry. A
-failed `WorkerPool.init()` is not cached: fix the paths and call `init()` again.
+server must send CORS headers (`Access-Control-Allow-Origin`) for them. If the files fail to load,
+`LipSyncEngine.init()` and `WorkerPool.init()` reject. Neither keeps the failure: fix the paths and
+call `init()` again, without reloading the page. Both keep the paths they were given, so a later
+`init()` without options loads the same self-hosted files, not the CDN, and so does an `analyze()`
+or `analyzeAsync()` call that starts the engine or the pool. `destroy()` forgets the paths.
 
 ## Common Issues
 
