@@ -241,3 +241,117 @@ describe('loadModuleWithAssets', () => {
     expect(factoryCalls[0].instantiateWasm).toBeUndefined();
   });
 });
+
+describe('WasmLoader.load on the main thread', () => {
+  /** A <script> element stand-in that records removal */
+  interface StubScript {
+    src: string;
+    onload: (() => void) | null;
+    onerror: (() => void) | null;
+    removed: boolean;
+    remove(): void;
+  }
+
+  const MAIN_PATHS = {
+    wasmPath: 'https://example.test/lip-sync-engine.wasm',
+    dataPath: DATA_PATH,
+    jsPath: 'https://example.test/lip-sync-engine.js',
+  };
+
+  let win: { createLipSyncEngineModule?: (options: Record<string, unknown>) => Promise<LipSyncEngineModule> };
+  let scripts: StubScript[];
+  /** What happens when a script is added to the page; set per test */
+  let scriptOutcome: 'load' | 'error' | 'load-without-factory';
+  let signals: AbortSignal[];
+
+  const factory = (options: Record<string, unknown>) => {
+    factoryCalls.push(options);
+    return createModule(options);
+  };
+
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal('WorkerGlobalScope', undefined);
+    win = {};
+    scripts = [];
+    scriptOutcome = 'load';
+    signals = [];
+    vi.stubGlobal('window', win);
+    vi.stubGlobal('document', {
+      createElement: () => {
+        const script: StubScript = {
+          src: '',
+          onload: null,
+          onerror: null,
+          removed: false,
+          remove() { this.removed = true; },
+        };
+        scripts.push(script);
+        return script;
+      },
+      head: {
+        appendChild: (script: StubScript) => {
+          setTimeout(() => {
+            if (scriptOutcome === 'error') {
+              script.onerror?.();
+              return;
+            }
+            if (scriptOutcome === 'load') win.createLipSyncEngineModule = factory;
+            script.onload?.();
+          }, 0);
+        },
+      },
+    });
+    // Downloads stay pending until aborted, so the test sees whether they were
+    vi.stubGlobal('fetch', (_url: string, init?: RequestInit) => {
+      const signal = init?.signal;
+      if (signal) signals.push(signal);
+      return new Promise((_, reject) => {
+        signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+      });
+    });
+  });
+
+  it('reuses the loader script that already ran instead of adding it again', async () => {
+    stubFetch('ok', 'ok');
+    win.createLipSyncEngineModule = factory;
+
+    await expect(WasmLoader.load(MAIN_PATHS)).resolves.toBeDefined();
+    expect(scripts).toHaveLength(0);
+    expect(factoryCalls).toHaveLength(1);
+  });
+
+  it('removes the script and aborts the downloads when the loader script fails to load', async () => {
+    scriptOutcome = 'error';
+
+    await expect(WasmLoader.load(MAIN_PATHS)).rejects.toThrow(
+      `Failed to load WASM module from ${MAIN_PATHS.jsPath}`
+    );
+    expect(scripts).toHaveLength(1);
+    expect(scripts[0].removed).toBe(true);
+    // One signal for the .data download and one for the .wasm compile
+    expect(signals).toHaveLength(2);
+    expect(signals.every(signal => signal.aborted)).toBe(true);
+    expect(factoryCalls).toHaveLength(0);
+  });
+
+  it('removes the script and aborts the downloads when the script defines no factory', async () => {
+    scriptOutcome = 'load-without-factory';
+
+    await expect(WasmLoader.load(MAIN_PATHS)).rejects.toThrow('WASM module factory not found');
+    expect(scripts[0].removed).toBe(true);
+    expect(signals.every(signal => signal.aborted)).toBe(true);
+  });
+
+  it('adds the script again on the next load after it failed', async () => {
+    scriptOutcome = 'error';
+    await expect(WasmLoader.load(MAIN_PATHS)).rejects.toThrow('Failed to load WASM module');
+
+    scriptOutcome = 'load';
+    stubFetch('ok', 'ok');
+    await expect(WasmLoader.load(MAIN_PATHS)).resolves.toBeDefined();
+    expect(scripts).toHaveLength(2);
+    expect(scripts[1].removed).toBe(false);
+    expect(factoryCalls).toHaveLength(1);
+  });
+});

@@ -9,9 +9,12 @@ declare function importScripts(...urls: string[]): void;
  * Compile the .wasm file. Resolves undefined when that fails, so Emscripten's
  * own loading can try instead and report the error.
  */
-export async function compileWasm(wasmPath: string): Promise<WebAssembly.Module | undefined> {
+export async function compileWasm(
+  wasmPath: string,
+  signal?: AbortSignal
+): Promise<WebAssembly.Module | undefined> {
   try {
-    const response = await fetch(wasmPath);
+    const response = await fetch(wasmPath, signal ? { signal } : undefined);
     if (!response.ok) {
       return undefined;
     }
@@ -29,8 +32,12 @@ export async function compileWasm(wasmPath: string): Promise<WebAssembly.Module 
 /** HTTP error status for the .data file; not retried */
 class DataStatusError extends Error {}
 
-async function downloadData(dataPath: string, cache?: RequestCache): Promise<ArrayBuffer> {
-  const response = await fetch(dataPath, cache ? { cache } : undefined);
+async function downloadData(
+  dataPath: string,
+  cache?: RequestCache,
+  signal?: AbortSignal
+): Promise<ArrayBuffer> {
+  const response = await fetch(dataPath, cache || signal ? { cache, signal } : undefined);
   if (!response.ok) {
     throw new DataStatusError(`HTTP ${response.status}`);
   }
@@ -42,17 +49,17 @@ async function downloadData(dataPath: string, cache?: RequestCache): Promise<Arr
  * pending forever when it fails, so the loader downloads the file itself and
  * hands it over through getPreloadedPackage.
  */
-export async function fetchDataFile(dataPath: string): Promise<ArrayBuffer> {
+export async function fetchDataFile(dataPath: string, signal?: AbortSignal): Promise<ArrayBuffer> {
   try {
     try {
-      return await downloadData(dataPath);
+      return await downloadData(dataPath, undefined, signal);
     } catch (error) {
-      if (error instanceof DataStatusError) throw error;
+      if (error instanceof DataStatusError || signal?.aborted) throw error;
       // A network error. When the browser cannot store the file in its HTTP
       // cache (for example in a private window), concurrent downloads of the
       // same URL can fail while sharing one cache entry. Retry once without
       // the cache.
-      return await downloadData(dataPath, 'no-store');
+      return await downloadData(dataPath, 'no-store', signal);
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -164,14 +171,16 @@ async function loadModuleImpl(
   }
 
   // Download the .data file and compile the .wasm while the loader script
-  // loads. Errors surface when the module is created.
+  // loads. Errors surface when the module is created. On the main thread the
+  // downloads are aborted if the loader script fails to load.
+  const downloads = isWorker ? undefined : new AbortController();
   const dataPromise = started?.data ?? (options.dataBuffer
     ? Promise.resolve(options.dataBuffer)
-    : fetchDataFile(dataPath));
+    : fetchDataFile(dataPath, downloads?.signal));
   dataPromise.catch(() => {});
   const compiledPromise = started?.compiled ?? (wasmModule
     ? Promise.resolve(wasmModule)
-    : compileWasm(wasmPath));
+    : compileWasm(wasmPath, downloads?.signal));
 
   // Emscripten has no failure callback for instantiateWasm, so report
   // instantiation errors through a promise raced against module creation.
@@ -225,33 +234,33 @@ async function loadModuleImpl(
     return createWithHooks(createModule);
   }
 
-  // Main thread: load the loader script, which defines the factory on window
-  return new Promise((resolve, reject) => {
+  // Main thread: the loader script defines the factory on window. It can
+  // create any number of modules, so a script that already ran is reused.
+  const existing: ModuleFactory | undefined = (window as any).createLipSyncEngineModule;
+  if (existing) {
+    return createWithHooks(existing);
+  }
+  const createModule = await new Promise<ModuleFactory>((resolve, reject) => {
     const script = document.createElement('script');
     script.src = jsPath;
     script.async = true;
-
-    script.onload = async () => {
-      try {
-        const createModule: ModuleFactory | undefined = (window as any).createLipSyncEngineModule;
-        if (!createModule) {
-          throw new Error(
-            'WASM module factory not found. Make sure lip-sync-engine.js is loaded correctly.'
-          );
-        }
-        resolve(await createWithHooks(createModule));
-      } catch (error) {
-        reject(error);
+    const fail = (error: Error) => {
+      script.remove();
+      downloads?.abort();
+      reject(error);
+    };
+    script.onload = () => {
+      const factory: ModuleFactory | undefined = (window as any).createLipSyncEngineModule;
+      if (factory) {
+        resolve(factory);
+      } else {
+        fail(new Error('WASM module factory not found. Make sure lip-sync-engine.js is loaded correctly.'));
       }
     };
-
-    script.onerror = () => {
-      script.remove();
-      reject(new Error(`Failed to load WASM module from ${jsPath}`));
-    };
-
+    script.onerror = () => fail(new Error(`Failed to load WASM module from ${jsPath}`));
     document.head.appendChild(script);
   });
+  return createWithHooks(createModule);
 }
 
 type ModuleFactory = (moduleOptions: Record<string, unknown>) => Promise<LipSyncEngineModule>;

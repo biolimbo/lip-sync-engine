@@ -653,7 +653,7 @@ declare class WasmLoader {
 
 #### `load(options?)`
 
-Loads the module once per page and caches it. Later calls return the cached module, or the load in progress, and ignore their options. `LipSyncEngine.init()` loads through this method. A failed load is not cached: the next call loads again.
+Loads the module once per page and caches it. Later calls return the cached module, or the load in progress, and ignore their options. `LipSyncEngine.init()` loads through this method. A failed load is not cached: the next call loads again. On the main thread the loader script (`jsPath`) is added to the page once and reused by later loads; if it fails to load, it is removed from the page and the `.data` and `.wasm` downloads are canceled.
 
 **Parameters:**
 - `options?: WasmLoaderOptions`: file paths and preloaded assets (see [`WasmLoaderOptions`](#wasmloaderoptions)).
