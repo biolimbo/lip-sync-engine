@@ -12,12 +12,27 @@ All notable changes to `lip-sync-engine` are documented here. The format follows
   `WasmLoader.load()` rejects, the next `init()`, `analyze()`, or `load()` loads again instead of
   returning the same error until the page is reloaded. A load still in progress when
   `WasmLoader.reset()` is called no longer fills the cache afterwards.
+- `LipSyncEngine.init()` without options, `analyze()`, and the exported `analyze()` reuse the
+  options of the last `init(options)` call that started a load, so a self-hosted app whose
+  `init(options)` failed retries from its own paths instead of the unpkg CDN. `destroy()` clears
+  the options.
+- `LipSyncEngine.init()` and `analyze()` no longer stay pending forever when the `.data` model file
+  fails to download on the main thread. They reject with
+  `Failed to load model data from <dataPath>: <reason>`.
+- A main-thread retry reuses the loader script that already ran instead of adding another
+  `<script>` and running it again. When the loader script fails to load, it is removed from the page
+  and the `.data` and `.wasm` downloads are canceled.
 - `WorkerPool.init()` and `warmup()` no longer stay pending when a worker fails to download the
   `.data` model file. The startup rejects with
   `Worker initialization failed: Failed to load model data from <dataPath>: <reason>`, and calling
   `init()` or `warmup()` again retries. A network error during the download is retried once without
   the HTTP cache, so concurrent downloads that fail with `ERR_CACHE_WRITE_FAILURE` (seen in private
   windows and fresh browser profiles) no longer stop the pool from starting.
+- `WorkerPool.init()` and `warmup()` reject with
+  `Worker initialization failed: could not read the worker's reply` when the pool cannot read a
+  starting worker's reply, instead of staying pending.
+- The pool's first worker downloads the `.data` file while it compiles the `.wasm`, instead of
+  after, and does not compile the `.wasm` a second time when its own compile fails.
 - `WorkerPool.getMemoryStats()` no longer stays pending when a worker crashes before it answers;
   that worker counts as `0` bytes.
 - `StreamAnalyzerController.addChunk()` after `end()` throws
