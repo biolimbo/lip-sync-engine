@@ -380,9 +380,9 @@ await WorkerPool.getInstance(2).init({
 ```
 
 Use root-relative paths (starting with `/`) or full URLs. If the files are on another origin, that
-server must send CORS headers (`Access-Control-Allow-Origin`) for them. If `LipSyncEngine` fails to
-load the files, the failure is cached for the page: fix the paths, then reload the page to retry. A
-failed `WorkerPool.init()` is not cached: fix the paths and call `init()` again.
+server must send CORS headers (`Access-Control-Allow-Origin`) for them. If the files fail to load,
+`LipSyncEngine.init()` and `WorkerPool.init()` reject. Neither keeps the failure: fix the paths and
+call `init()` again, without reloading the page.
 
 ## Common Issues
 

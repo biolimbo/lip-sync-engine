@@ -92,9 +92,8 @@ export function useLipSyncEngine() {
   const chunkSize = ref(5); // seconds
   const recordingDuration = ref(10); // seconds
   const isInitialized = ref(false);
-  // Set when the selected mode fails to start. The library keeps a failed
-  // WASM load, so Single Thread needs a page reload; a worker pool that failed
-  // to start tries again when a worker mode is selected again.
+  // Set when the selected mode fails to start. The library does not keep a
+  // failed startup, so selecting the mode again tries again.
   const initError = ref<Error | null>(null);
 
   // Start what the selected mode needs. Nothing is torn down when the mode

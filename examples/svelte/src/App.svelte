@@ -64,14 +64,10 @@
     : $lipSyncEngineStore.isInitialized ? 'ready'
     : $lipSyncEngineStore.stopped ? 'stopped'
     : 'initializing';
-  // The library keeps a failed WASM load, so Single Thread needs a reload. A
-  // worker pool that failed to start tries again when a worker mode is selected.
+  // The library does not keep a failed startup, so selecting the mode again
+  // tries again.
   $: initFailure = $lipSyncEngineStore.initError
-    ? `${$lipSyncEngineStore.initError.message.replace(/\.+$/, '')}. ${
-        $lipSyncEngineStore.mode === 'single'
-          ? 'Reload the page to retry.'
-          : 'Switch modes or reload the page to retry.'
-      }`
+    ? `${$lipSyncEngineStore.initError.message.replace(/\.+$/, '')}. Switch modes or reload the page to retry.`
     : '';
   $: busy = $lipSyncEngineStore.isAnalyzing || isRecording || isLoading;
   // Recording and loading work while the mode starts (analyze() waits for it),

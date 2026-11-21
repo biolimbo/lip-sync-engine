@@ -97,7 +97,7 @@ examples/svelte/
 
 Selecting a mode starts what it needs: the engine for Single Thread, one worker for Web Worker, and all workers for Chunked and Streaming. `isInitialized` turns true when that startup finishes, and `initError` is set if it fails. `analyze()` also starts the mode if needed, so recording can begin while the mode is still starting; only a failed startup disables it.
 
-`analyze()` resolves with the result. It throws on failure: it sets `initError` (and throws a `StartupError`) when the selected mode fails to start, and sets `error` when the analysis itself fails. The library keeps a failed WASM load, so after a Single Thread failure reload the page to retry. A worker pool that failed to start tries again when a worker mode is selected again, so for the worker modes switch modes or reload the page.
+`analyze()` resolves with the result. It throws on failure: it sets `initError` (and throws a `StartupError`) when the selected mode fails to start, and sets `error` when the analysis itself fails. The library does not keep a failed startup, so switching to another mode and back retries it; reloading the page works too.
 
 `lipSyncEngineStore.destroy()` releases the main-thread engine and terminates the workers when the app no longer needs them. It calls `LipSyncEngine.destroy()` and `WasmLoader.reset()` (`WasmLoader` keeps the loaded WASM module until it is reset), so the next `init()` loads the module again. It sets `stopped` in the store, and the next `analyze()` or mode change starts the selected mode again.
 

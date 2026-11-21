@@ -68,7 +68,7 @@ function App() {
   // Recording and loading work while the mode starts (analyze() waits for it),
   // but not after the mode failed to start
   const canAnalyze = !busy && !initError;
-  const initFailureText = initError ? startupFailureMessage(initError, mode) : '';
+  const initFailureText = initError ? startupFailureMessage(initError) : '';
 
   const addLog = (message: string, type: LogEntry['type'] = 'info') => {
     const timestamp = `[${new Date().toLocaleTimeString()}]`;
@@ -451,15 +451,11 @@ function modeLabel(mode: ExecutionMode): string {
 }
 
 /**
- * Error text for a mode that failed to start. The library keeps a failed WASM
- * load, so Single Thread needs a reload; a worker pool that failed to start
- * tries again the next time a worker mode is selected.
+ * Error text for a mode that failed to start. The library does not keep a
+ * failed startup, so selecting the mode again tries again.
  */
-function startupFailureMessage(error: Error, mode: ExecutionMode): string {
-  const message = error.message.replace(/\.+$/, '');
-  return mode === 'single'
-    ? `${message}. Reload the page to retry.`
-    : `${message}. Switch modes or reload the page to retry.`;
+function startupFailureMessage(error: Error): string {
+  return `${error.message.replace(/\.+$/, '')}. Switch modes or reload the page to retry.`;
 }
 
 function seconds(pcm16: Int16Array): string {

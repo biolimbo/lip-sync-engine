@@ -68,14 +68,11 @@ const visemeNames: Record<string, string> = {
   X: 'Idle',
 };
 
-// The library keeps a failed WASM load, so Single Thread needs a reload. A
-// worker pool that failed to start tries again when a worker mode is selected.
+// The library does not keep a failed startup, so selecting the mode again
+// tries again.
 const initErrorMessage = computed(() => {
   if (!initError.value) return '';
-  const message = initError.value.message.replace(/\.+$/, '');
-  return mode.value === 'single'
-    ? `${message}. Reload the page to retry.`
-    : `${message}. Switch modes or reload the page to retry.`;
+  return `${initError.value.message.replace(/\.+$/, '')}. Switch modes or reload the page to retry.`;
 });
 
 const statusText = computed(() => {

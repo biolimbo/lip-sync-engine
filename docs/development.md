@@ -232,7 +232,7 @@ Open the browser's Network tab and find the requests for `lip-sync-engine.wasm`,
 - Requests go to `https://unpkg.com/lip-sync-engine@<version>/dist/...` when the example passes no paths. A 404 there means `<version>` (from `package.json`) is not published; use local paths.
 - Requests go to the `wasmPath`, `dataPath`, `jsPath`, and `workerScriptUrl` you configured otherwise. A CORS error means the server needs CORS headers (`--cors` for `http-server`).
 
-The library caches a failed load, so reload the page after fixing the cause.
+A failed load is not cached: after fixing the cause, calling `init()` again (or switching modes in an example) loads the files again.
 
 ### Type Errors in an Example
 
