@@ -509,6 +509,32 @@ describe('WorkerPool analysis', () => {
   });
 });
 
+describe('WorkerPool.getMemoryStats', () => {
+  const statsRequests = (worker: StubWorker) =>
+    worker.posted.filter((m): m is { type: 'stats'; id: number } => (m as { type: string }).type === 'stats');
+
+  it('reports each running worker', async () => {
+    const worker = await initPool();
+    const stats = pool.getMemoryStats();
+    worker.emitMessage({ type: 'stats', id: statsRequests(worker)[0].id, wasmHeapBytes: 1024 });
+
+    await expect(stats).resolves.toEqual({ workers: [1024], totalBytes: 1024 });
+  });
+
+  it('counts a worker that crashes before it answers as 0 bytes', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const [first, second] = await warmPool();
+    const stats = pool.getMemoryStats();
+
+    second.emitMessage({ type: 'stats', id: statsRequests(second)[0].id, wasmHeapBytes: 2048 });
+    first.emitError('RuntimeError: unreachable');
+    const third = StubWorker.instances[2];
+    third.emitMessage({ type: 'stats', id: statsRequests(third)[0].id, wasmHeapBytes: 4096 });
+
+    await expect(stats).resolves.toEqual({ workers: [0, 2048, 4096], totalBytes: 6144 });
+  });
+});
+
 describe('StreamAnalyzerController', () => {
   it('counts completed chunks', async () => {
     const worker = await initPool();

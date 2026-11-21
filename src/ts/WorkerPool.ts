@@ -99,7 +99,8 @@ export class WorkerPool {
   private prewarm: PrewarmMode = true;
   private shareAssets = true;
   private recognizer: RecognizerKind = 'pocketsphinx';
-  private statsRequests: Map<number, (bytes: number) => void> = new Map();
+  /** Pending getMemoryStats() answers, by request id */
+  private statsRequests: Map<number, { worker: PoolWorker; resolve: (bytes: number) => void }> = new Map();
 
   private constructor(
     maxWorkers: number = navigator.hardwareConcurrency || 4,
@@ -441,7 +442,7 @@ export class WorkerPool {
       const pending = this.statsRequests.get(message.id);
       if (pending) {
         this.statsRequests.delete(message.id);
-        pending(message.wasmHeapBytes);
+        pending.resolve(message.wasmHeapBytes);
       }
       return;
     }
@@ -484,7 +485,8 @@ export class WorkerPool {
   }
 
   /**
-   * Remove a crashed worker from the pool and reject the job it was running
+   * Remove a crashed worker from the pool, reject the job it was running, and
+   * count it as 0 bytes in pending getMemoryStats() calls
    */
   private removeWorker(poolWorker: PoolWorker, error: Error): void {
     const index = this.workers.indexOf(poolWorker);
@@ -502,6 +504,13 @@ export class WorkerPool {
       }
       poolWorker.jobId = null;
     }
+
+    this.statsRequests.forEach((pending, id) => {
+      if (pending.worker === poolWorker) {
+        this.statsRequests.delete(id);
+        pending.resolve(0);
+      }
+    });
 
     this.failQueueIfNoWorkers();
   }
@@ -681,9 +690,11 @@ export class WorkerPool {
   }
 
   /**
-   * WebAssembly memory size of each worker, in bytes. This is most of a
-   * worker's memory; the browser adds the JS heap and the model file copy
-   * (about 39 MB per worker) on top.
+   * WebAssembly memory size of each running worker, in bytes. This is most
+   * of a worker's memory; the browser adds the JS heap and the model file
+   * copy (about 39 MB per worker) on top. A worker answers between analyses,
+   * so the promise waits for running jobs. A worker that stops before it
+   * answers (it crashes, or destroy() is called) counts as 0 bytes.
    */
   async getMemoryStats(): Promise<{ workers: number[]; totalBytes: number }> {
     const workers = await Promise.all(
@@ -691,7 +702,7 @@ export class WorkerPool {
         (w) =>
           new Promise<number>((resolve) => {
             const id = this.nextJobId++;
-            this.statsRequests.set(id, resolve);
+            this.statsRequests.set(id, { worker: w, resolve });
             w.worker.postMessage({ type: 'stats', id } as WorkerRequest);
           })
       )
@@ -715,7 +726,7 @@ export class WorkerPool {
       job.reject(new WorkerPoolDestroyedError());
     });
     this.inFlightJobs.clear();
-    this.statsRequests.forEach(resolve => resolve(0));
+    this.statsRequests.forEach(pending => pending.resolve(0));
     this.statsRequests.clear();
 
     // Start a new lifecycle, then abort the old one. This cancels worker script
