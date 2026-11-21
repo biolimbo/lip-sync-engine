@@ -66,8 +66,14 @@ export class LipSyncEngine {
   }
 
   /**
-   * Initialize the WASM module
-   * Call this once before using analyze()
+   * Load the WASM module and start the engine.
+   *
+   * Optional: analyze() calls it with the default (CDN) paths. Call it
+   * yourself, before any analyze(), to load self-hosted files or to load the
+   * engine ahead of the first analysis. The module loads once per page;
+   * calls made while it loads or after it loaded share that load and ignore
+   * their options. A failed load is not kept: the next init() or analyze()
+   * loads again.
    *
    * @param options - Optional paths to WASM files
    */
@@ -75,7 +81,7 @@ export class LipSyncEngine {
     if (this.initialized) return;
     if (this.initPromise) return this.initPromise;
 
-    this.initPromise = (async () => {
+    const promise: Promise<void> = (async () => {
       // Load WASM module
       this.module = await WasmLoader.load(options);
 
@@ -101,8 +107,13 @@ export class LipSyncEngine {
         this.module._free(modelsPathPtr);
       }
     })();
+    this.initPromise = promise;
+    // Forget a failed start so the next call tries again
+    promise.catch(() => {
+      if (this.initPromise === promise) this.initPromise = null;
+    });
 
-    return this.initPromise;
+    return promise;
   }
 
   /**

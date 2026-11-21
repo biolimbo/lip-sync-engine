@@ -130,3 +130,43 @@ describe('WasmLoader.loadModule', () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe('WasmLoader.load', () => {
+  it('does not cache a failed load: the next call loads again', async () => {
+    stubFetch(500, 'ok');
+
+    await expect(WasmLoader.load(PATHS)).rejects.toThrow('HTTP 500');
+    const module = await WasmLoader.load(PATHS);
+
+    expect(module).toBeDefined();
+    expect(factoryCalls).toHaveLength(1);
+    await expect(WasmLoader.load(PATHS)).resolves.toBe(module);
+  });
+
+  it('shares one load between concurrent calls', async () => {
+    stubFetch('ok');
+
+    const [a, b] = await Promise.all([WasmLoader.load(PATHS), WasmLoader.load(PATHS)]);
+    expect(a).toBe(b);
+    expect(factoryCalls).toHaveLength(1);
+  });
+
+  it('does not let a load started before reset() fill the cache', async () => {
+    stubFetch('ok', 'ok');
+    let finishFirst!: () => void;
+    const firstModule = { first: true } as unknown as LipSyncEngineModule;
+    createModule = () => new Promise(resolve => { finishFirst = () => resolve(firstModule); });
+
+    const stale = WasmLoader.load(PATHS);
+    await vi.waitFor(() => expect(factoryCalls).toHaveLength(1));
+    WasmLoader.reset();
+    finishFirst();
+    // The caller of the stale load still gets its module
+    await expect(stale).resolves.toBe(firstModule);
+
+    createModule = async () => ({ second: true }) as unknown as LipSyncEngineModule;
+    const fresh = await WasmLoader.load(PATHS);
+    expect(fresh).not.toBe(firstModule);
+    expect(factoryCalls).toHaveLength(2);
+  });
+});

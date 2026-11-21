@@ -67,26 +67,41 @@ export async function fetchDataFile(dataPath: string): Promise<ArrayBuffer> {
 export class WasmLoader {
   private static modulePromise: Promise<LipSyncEngineModule> | null = null;
   private static module: LipSyncEngineModule | null = null;
+  /** Incremented by reset(), so a load started before it cannot fill the cache */
+  private static generation = 0;
 
   /**
-   * Load the WASM module
+   * Load the WASM module once and cache it. Later calls return the cached
+   * module or the load in progress, and ignore their options. A failed load
+   * is not cached: the next call loads again.
    * @param options - Optional paths to WASM files
    * @returns Promise resolving to the loaded WASM module
    */
   static async load(options: WasmLoaderOptions = {}): Promise<LipSyncEngineModule> {
-    // Return cached module if already loaded
     if (this.module) {
       return this.module;
     }
-
-    // Return in-progress load if already loading
     if (this.modulePromise) {
       return this.modulePromise;
     }
 
-    this.modulePromise = this._loadModuleImpl(options);
-    this.module = await this.modulePromise;
-    return this.module;
+    const generation = this.generation;
+    const promise: Promise<LipSyncEngineModule> = this._loadModuleImpl(options).then(
+      (module) => {
+        if (this.generation === generation) {
+          this.module = module;
+        }
+        return module;
+      },
+      (error) => {
+        if (this.modulePromise === promise) {
+          this.modulePromise = null;
+        }
+        throw error;
+      }
+    );
+    this.modulePromise = promise;
+    return promise;
   }
 
   /**
@@ -226,9 +241,12 @@ export class WasmLoader {
   }
 
   /**
-   * Reset the loader (useful for testing)
+   * Drop the module cached by load(), so it can be garbage-collected and the
+   * next load() loads again. A load in progress still resolves for its
+   * callers but is not cached.
    */
   static reset(): void {
+    this.generation++;
     this.module = null;
     this.modulePromise = null;
   }
