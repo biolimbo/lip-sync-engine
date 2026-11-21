@@ -32,7 +32,7 @@ All notable changes to `lip-sync-engine` are documented here. The format follows
   `Worker initialization failed: could not read the worker's reply` when the pool cannot read a
   starting worker's reply, instead of staying pending.
 - The pool's first worker downloads the `.data` file while it compiles the `.wasm`, instead of
-  after, and does not compile the `.wasm` a second time when its own compile fails.
+  after.
 - `WorkerPool.getMemoryStats()` no longer stays pending when a worker crashes before it answers;
   that worker counts as `0` bytes.
 - `StreamAnalyzerController.addChunk()` after `end()` throws

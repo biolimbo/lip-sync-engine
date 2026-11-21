@@ -88,6 +88,17 @@ describe('fetchDataFile', () => {
     expect(calls[1].init?.cache).toBe('no-store');
   });
 
+  it('does not retry a download that was aborted', async () => {
+    const calls = stubFetch('network-error', 'ok');
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(fetchDataFile(DATA_PATH, controller.signal)).rejects.toThrow(
+      `Failed to load model data from ${DATA_PATH}`
+    );
+    expect(calls).toHaveLength(1);
+  });
+
   it('rejects with the URL and reason when the retry fails too', async () => {
     stubFetch('network-error', 'body-error');
 
@@ -340,6 +351,7 @@ describe('WasmLoader.load on the main thread', () => {
 
     await expect(WasmLoader.load(MAIN_PATHS)).rejects.toThrow('WASM module factory not found');
     expect(scripts[0].removed).toBe(true);
+    expect(signals).toHaveLength(2);
     expect(signals.every(signal => signal.aborted)).toBe(true);
   });
 

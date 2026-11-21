@@ -90,7 +90,9 @@ export class LipSyncEngine {
     if (this.initPromise) return this.initPromise;
 
     if (options) {
-      this.loadOptions = options;
+      // Merge per field, as WorkerPool.init() does, so a retry that fixes one
+      // path keeps the others
+      this.loadOptions = { ...this.loadOptions, ...options };
     }
     const loadOptions = this.loadOptions ?? {};
 

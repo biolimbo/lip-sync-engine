@@ -95,6 +95,17 @@ describe('LipSyncEngine init options', () => {
     expect(load.mock.calls.map(([options]) => options)).toEqual([SELF_HOSTED, fixed, fixed]);
   });
 
+  it('keeps the other paths when a retry passes only the fixed one', async () => {
+    const fix = { dataPath: '/fixed/lip-sync-engine.data' };
+    const load = vi.spyOn(WasmLoader, 'load').mockRejectedValue(LOAD_ERROR);
+    const engine = LipSyncEngine.getInstance();
+
+    await expect(engine.init(SELF_HOSTED)).rejects.toThrow();
+    await expect(engine.init(fix)).rejects.toThrow();
+
+    expect(load.mock.calls[1][0]).toEqual({ ...SELF_HOSTED, ...fix });
+  });
+
   it('ignores the options of a call made while a load is in progress', async () => {
     let failLoad!: (error: Error) => void;
     const load = vi
