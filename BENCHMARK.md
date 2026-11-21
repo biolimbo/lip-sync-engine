@@ -1,20 +1,35 @@
 # Benchmarks
 
-This page compares lip-sync-engine 2.0.0 with 1.0.3 on streaming speed, memory, and mouth-cue quality, and compares 2.0.0 with two other browser lip-sync libraries. For what changed between the versions, see [CHANGELOG.md](./CHANGELOG.md).
+How lip-sync-engine 2.0.0 compares with 1.0.3 and with two other browser lip-sync libraries on accuracy, speed, and memory. For what changed between the versions, see [CHANGELOG.md](./CHANGELOG.md).
 
-## Summary
+## At a Glance
 
-Measured with 250 ms streaming chunks, 5 workers, and 8 logical CPUs unless stated otherwise:
+Streaming speech in 250 ms chunks, 2 workers, 8 logical CPUs. Accuracy is measured against independent phone labels; see [Head-to-Head](#head-to-head-with-other-browser-lip-sync-libraries) for the method.
 
-| Metric | 1.0.3 | 2.0.0 |
-|---|---|---|
-| Analysis time per chunk, warm worker (median) | 438 ms | 85 ms |
-| CPU per second of audio | 1.82 s | 0.40 s |
-| Memory per warm worker | about 170 MB, growing | about 115 MB, flat |
-| Repeated 100 ms calls on one worker | fails after 482 calls | 3000 calls, heap steady at 128 MB |
-| Mouth-cue agreement, streaming (six shapes) | 36.8% (chunks analyzed alone) | 88.4% (with context and lookahead) |
+| Library and setup | Accuracy¹ | m, b, p shown with closed lips | CPU per second of audio² | Delay before the first cues | Memory per worker |
+|---|---|---|---|---|---|
+| **lip-sync-engine 2.0.0**, context and lookahead | **54.6%** | **92%** | 0.34 s | 120 ms | about 115 MB |
+| lip-sync-engine 1.0.3, chunks analyzed alone | 33.0% | 90% | 1.70 s | 489 ms | about 170 MB, growing |
+| headaudio 1.1.0 | 42.5% | 48% | 0.007 s | about 30 to 40 ms | not measured |
+| wlipsync 1.3.1 | 42.1% | 47% | 0.009 s | about 30 to 40 ms | not measured |
 
-With `extendedShapes: ''`, 2.0.0 output is byte-identical to 1.0.3 for the same input, so the speed and memory differences cost no quality. The quality gain comes from the `contextMs` and `lookaheadMs` streaming options.
+¹ Balanced accuracy over five mouth classes; chance is 20%. ² lip-sync-engine was measured in Chromium (all browser processes), the other libraries in Node, so compare orders of magnitude only.
+
+In short:
+
+- **2.0.0 with context and lookahead is the most accurate option tested,** about 12 points above the other libraries and within 1 to 3 points of analyzing each utterance in one call.
+- **2.0.0 is about 5 times faster than 1.0.3** per chunk and uses under a quarter of the CPU, so one worker keeps up with real-time speech.
+- **The usual 1.0.3 streaming setup is the least accurate option tested.**
+- **headaudio and wlipsync use 40 to 50 times less CPU** and react within about 30 to 40 ms, but show closed lips for fewer than half of m, b, and p sounds.
+- **2.0.0 changes no output by itself:** with `extendedShapes: ''` and no context or lookahead, it returns the same cues as 1.0.3.
+
+```mermaid
+xychart-beta horizontal
+    title "Accuracy against phone labels (balanced, %)"
+    x-axis ["1.0.3, chunks alone", "wlipsync 1.3.1", "headaudio 1.1.0", "2.0.0, context and lookahead", "2.0.0, whole utterance"]
+    y-axis "Balanced accuracy (%)" 0 --> 60
+    bar [33.0, 42.1, 42.5, 54.6, 55.8]
+```
 
 ## Test Setup
 
@@ -33,101 +48,6 @@ Metrics:
 - **Memory:** total PSS of all browser processes, minus the same figure before the pool existed.
 - **First cues:** time from the first chunk's arrival until its cues are ready.
 - **Stalls:** total time the player waits for a chunk's cues during one utterance.
-
-## Speed and Memory
-
-250 ms chunks. In the streaming columns, all chunks of an utterance arrive at once and each chunk is analyzed alone, without context or lookahead.
-
-**2 CPUs:**
-
-| Workers | Version | Fresh pool to first cue | Per chunk (median) | CPU per audio second | Streaming: first cues | Streaming: stalls | Memory after use |
-|---|---|---|---|---|---|---|---|
-| 1 | 1.0.3 | 783 ms | 414 ms | 1.76 s | 464 ms | 12.0 s | 384 MB |
-| 1 | 2.0.0 | 671 ms | 93 ms | 0.44 s | 110 ms | 0 | 120 MB |
-| 2 | 1.0.3 | 1160 ms | 442 ms | 1.83 s | 439 ms | 0 (worst utterance 0.3 s) | 507 MB |
-| 2 | 2.0.0 | 933 ms | 71 ms | 0.34 s | 219 ms | 0 | 241 MB |
-| 5 | 1.0.3 | 2638 ms | 414 ms | 1.76 s | 1324 ms | 0 | 861 MB |
-| 5 | 2.0.0 | 1960 ms | 93 ms | 0.43 s | 242 ms | 0 | 577 MB |
-
-**8 CPUs:**
-
-| Workers | Version | Fresh pool to first cue | Per chunk (median) | CPU per audio second | Streaming: first cues | Streaming: stalls | Memory after use |
-|---|---|---|---|---|---|---|---|
-| 1 | 1.0.3 | 710 ms | 495 ms | 2.09 s | 499 ms | 16.5 s | not recorded¹ |
-| 1 | 2.0.0 | 508 ms | 97 ms | 0.43 s | 170 ms | 0 | 127 MB |
-| 2 | 1.0.3 | 965 ms | 419 ms | 1.70 s | 489 ms | 0.26 s | 508 MB |
-| 2 | 2.0.0 | 915 ms | 73 ms | 0.34 s | 114 ms | 0 | 240 MB |
-| 5 | 1.0.3 | 1525 ms | 438 ms | 1.82 s | 721 ms | 0 | 868 MB |
-| 5 | 2.0.0 | 1154 ms | 85 ms | 0.40 s | 157 ms | 0 | 583 MB |
-
-¹ The measurement overlapped work queued by the previous test, so it is omitted. The 1-worker "fresh pool" figures in both tables come from a separate run.
-
-Observations:
-
-- **One 2.0.0 worker keeps up with real-time speech.** It needs about 0.4 CPU seconds per second of audio; 1.0.3 needs about 1.8, so with one worker it falls behind and playback stalls.
-- **Memory is about 115 MB per warm 2.0.0 worker.** A 1.0.3 worker grows with each call until allocation fails.
-- **More workers make a fresh pool slower,** most visibly on 2 CPUs (1.96 s with 5 workers, 0.67 s with 1), because all workers build their speech decoders at the same time. A pool that is kept between utterances does not pay this again.
-
-## Mouth-Cue Quality
-
-Reference: each whole utterance analyzed in one call with its transcript. Results are compared on a 10 ms grid.
-
-- **Agreement:** share of frames with the same mouth shape as the reference.
-- **False closures:** share of frames within 150 ms of a chunk boundary where the result shows a closed mouth but the reference shows it open.
-
-These tables use the six basic shapes (`extendedShapes: ''`) so that 1.0.3 and 2.0.0 compare like for like. "Context and lookahead" means `createStreamAnalyzer({ contextMs: 500, lookaheadMs: 500 })`, measured end to end. "Burst" means the audio arrives faster than playback; "3x" means it arrives at three times playback speed.
-
-**Agreement:**
-
-| Setup | 100 ms chunks | 250 ms | 500 ms | 1000 ms |
-|---|---|---|---|---|
-| Each chunk alone (1.0.3, and 2.0.0 with six shapes) | 41.9% | 36.8% | 53.0% | 68.0% |
-| Context only (`contextMs: 500`) | 39.3% | 54.0% | 66.0% | 75.4% |
-| Context and lookahead, burst | **90.4%** | **88.4%** | **87.7%** | **87.9%** |
-| Context and lookahead, 3x | 83.4% | 81.8% | 83.1% | 85.3% |
-
-The whole utterance analyzed in one call without a transcript reaches 94.2%.
-
-**False closures:**
-
-| Setup | 100 ms chunks | 250 ms | 500 ms | 1000 ms |
-|---|---|---|---|---|
-| Each chunk alone | 10.8% | 33.7% | 25.6% | 24.9% |
-| Context and lookahead, burst | 1.3% | 1.7% | 1.4% | 2.2% |
-
-How the controller schedules context and lookahead without adding delay is described in [Context and Lookahead](./docs/streaming-analysis.md#context-and-lookahead).
-
-**Latency and cost with context and lookahead** (2 workers, 8 CPUs unless stated; median per utterance, worst utterance in parentheses):
-
-| Chunk size | Arrival | First cues | Stalls | CPU per audio second |
-|---|---|---|---|---|
-| 100 ms | burst | 2 ms | 933 ms (1274 ms) | 0.37 s |
-| 250 ms | burst | 120 ms | 0 (68 ms) | 0.34 s |
-| 500 ms | burst | 123 ms | 0 | 0.28 s |
-| 1000 ms | burst | 296 ms | 0 | 0.32 s |
-| 100 ms | 3x | 1 ms | 349 ms (497 ms) | 0.70 s |
-| 250 ms | 3x | 98 ms | 0 (14 ms) | 0.67 s |
-| 250 ms | burst, 2 CPUs | 110 ms | 0 (62 ms) | 0.34 s |
-
-With 100 ms chunks, every chunk must be analyzed within a 100 ms rhythm, which causes stalls of about 0.3 to 0.9 s per utterance. For chunks that small, join them into chunks of at least 250 ms before analysis, or analyze each chunk alone and accept the lower quality.
-
-**Nine shapes** (the default, `extendedShapes: 'GHX'`), scored against a nine-shape reference:
-
-| Setup | 250 ms chunks | 1000 ms |
-|---|---|---|
-| Each chunk alone | 31.9% | 65.1% |
-| Context and lookahead, burst | 85.1% | 86.4% |
-
-Speed is unchanged. Agreement is slightly lower than with six shapes because there are more shapes to match exactly.
-
-**Phonetic recognizer** (`recognizer: 'phonetic'`), measured in a separate run with context and lookahead. Compare the two rows with each other, not with the tables above:
-
-| Recognizer | Agreement (250 / 1000 ms chunks) | CPU per audio second | Memory per additional worker | First chunk after `init()`/`warmup()` |
-|---|---|---|---|---|
-| Default (`'pocketsphinx'`) | 87.0% / 87.9% | 0.39 s | 140 MB | 136 ms |
-| Phonetic | 61.9% / 62.0% | 0.12 s | 80 MB | 26 ms |
-
-The phonetic recognizer is much cheaper but clearly less accurate. It is intended only for devices that cannot keep up otherwise.
 
 ## Head-to-Head with Other Browser Lip-Sync Libraries
 
@@ -182,6 +102,125 @@ Limits of this comparison:
 - Phone labels do not match visible mouth shapes exactly, because neighboring sounds blend, and five classes is a coarse scale. Use the numbers to compare libraries, not as absolute accuracy.
 - wlipsync would likely score higher with a profile made for these voices.
 - Only two speakers of read speech were tested, not synthesized speech.
+
+## Mouth-Cue Quality
+
+Reference: each whole utterance analyzed in one call with its transcript. Results are compared on a 10 ms grid.
+
+- **Agreement:** share of frames with the same mouth shape as the reference.
+- **False closures:** share of frames within 150 ms of a chunk boundary where the result shows a closed mouth but the reference shows it open.
+
+These tables use the six basic shapes (`extendedShapes: ''`) so that 1.0.3 and 2.0.0 compare like for like. "Context and lookahead" means `createStreamAnalyzer({ contextMs: 500, lookaheadMs: 500 })`, measured end to end. "Burst" means the audio arrives faster than playback; "3x" means it arrives at three times playback speed.
+
+**Agreement:**
+
+| Setup | 100 ms chunks | 250 ms | 500 ms | 1000 ms |
+|---|---|---|---|---|
+| Each chunk alone (1.0.3, and 2.0.0 with six shapes) | 41.9% | 36.8% | 53.0% | 68.0% |
+| Context only (`contextMs: 500`) | 39.3% | 54.0% | 66.0% | 75.4% |
+| Context and lookahead, burst | **90.4%** | **88.4%** | **87.7%** | **87.9%** |
+| Context and lookahead, 3x | 83.4% | 81.8% | 83.1% | 85.3% |
+
+The whole utterance analyzed in one call without a transcript reaches 94.2%.
+
+Bars show context and lookahead (burst arrival); the line shows chunks analyzed alone.
+
+```mermaid
+xychart-beta
+    title "Streaming agreement by chunk size (%)"
+    x-axis ["100 ms", "250 ms", "500 ms", "1000 ms"]
+    y-axis "Agreement (%)" 0 --> 100
+    bar [90.4, 88.4, 87.7, 87.9]
+    line [41.9, 36.8, 53.0, 68.0]
+```
+
+**False closures:**
+
+| Setup | 100 ms chunks | 250 ms | 500 ms | 1000 ms |
+|---|---|---|---|---|
+| Each chunk alone | 10.8% | 33.7% | 25.6% | 24.9% |
+| Context and lookahead, burst | 1.3% | 1.7% | 1.4% | 2.2% |
+
+How the controller schedules context and lookahead without adding delay is described in [Context and Lookahead](./docs/streaming-analysis.md#context-and-lookahead).
+
+**Latency and cost with context and lookahead** (2 workers, 8 CPUs unless stated; median per utterance, worst utterance in parentheses):
+
+| Chunk size | Arrival | First cues | Stalls | CPU per audio second |
+|---|---|---|---|---|
+| 100 ms | burst | 2 ms | 933 ms (1274 ms) | 0.37 s |
+| 250 ms | burst | 120 ms | 0 (68 ms) | 0.34 s |
+| 500 ms | burst | 123 ms | 0 | 0.28 s |
+| 1000 ms | burst | 296 ms | 0 | 0.32 s |
+| 100 ms | 3x | 1 ms | 349 ms (497 ms) | 0.70 s |
+| 250 ms | 3x | 98 ms | 0 (14 ms) | 0.67 s |
+| 250 ms | burst, 2 CPUs | 110 ms | 0 (62 ms) | 0.34 s |
+
+With 100 ms chunks, every chunk must be analyzed within a 100 ms rhythm, which causes stalls of about 0.3 to 0.9 s per utterance. For chunks that small, join them into chunks of at least 250 ms before analysis, or analyze each chunk alone and accept the lower quality.
+
+**Nine shapes** (the default, `extendedShapes: 'GHX'`), scored against a nine-shape reference:
+
+| Setup | 250 ms chunks | 1000 ms |
+|---|---|---|
+| Each chunk alone | 31.9% | 65.1% |
+| Context and lookahead, burst | 85.1% | 86.4% |
+
+Speed is unchanged. Agreement is slightly lower than with six shapes because there are more shapes to match exactly.
+
+**Phonetic recognizer** (`recognizer: 'phonetic'`), measured in a separate run with context and lookahead. Compare the two rows with each other, not with the tables above:
+
+| Recognizer | Agreement (250 / 1000 ms chunks) | CPU per audio second | Memory per additional worker | First chunk after `init()`/`warmup()` |
+|---|---|---|---|---|
+| Default (`'pocketsphinx'`) | 87.0% / 87.9% | 0.39 s | 140 MB | 136 ms |
+| Phonetic | 61.9% / 62.0% | 0.12 s | 80 MB | 26 ms |
+
+The phonetic recognizer is much cheaper but clearly less accurate. It is intended only for devices that cannot keep up otherwise.
+
+## Speed and Memory
+
+250 ms chunks. In the streaming columns, all chunks of an utterance arrive at once and each chunk is analyzed alone, without context or lookahead.
+
+**2 CPUs:**
+
+| Workers | Version | Fresh pool to first cue | Per chunk (median) | CPU per audio second | Streaming: first cues | Streaming: stalls | Memory after use |
+|---|---|---|---|---|---|---|---|
+| 1 | 1.0.3 | 783 ms | 414 ms | 1.76 s | 464 ms | 12.0 s | 384 MB |
+| 1 | 2.0.0 | 671 ms | 93 ms | 0.44 s | 110 ms | 0 | 120 MB |
+| 2 | 1.0.3 | 1160 ms | 442 ms | 1.83 s | 439 ms | 0 (worst utterance 0.3 s) | 507 MB |
+| 2 | 2.0.0 | 933 ms | 71 ms | 0.34 s | 219 ms | 0 | 241 MB |
+| 5 | 1.0.3 | 2638 ms | 414 ms | 1.76 s | 1324 ms | 0 | 861 MB |
+| 5 | 2.0.0 | 1960 ms | 93 ms | 0.43 s | 242 ms | 0 | 577 MB |
+
+**8 CPUs:**
+
+| Workers | Version | Fresh pool to first cue | Per chunk (median) | CPU per audio second | Streaming: first cues | Streaming: stalls | Memory after use |
+|---|---|---|---|---|---|---|---|
+| 1 | 1.0.3 | 710 ms | 495 ms | 2.09 s | 499 ms | 16.5 s | not recorded¹ |
+| 1 | 2.0.0 | 508 ms | 97 ms | 0.43 s | 170 ms | 0 | 127 MB |
+| 2 | 1.0.3 | 965 ms | 419 ms | 1.70 s | 489 ms | 0.26 s | 508 MB |
+| 2 | 2.0.0 | 915 ms | 73 ms | 0.34 s | 114 ms | 0 | 240 MB |
+| 5 | 1.0.3 | 1525 ms | 438 ms | 1.82 s | 721 ms | 0 | 868 MB |
+| 5 | 2.0.0 | 1154 ms | 85 ms | 0.40 s | 157 ms | 0 | 583 MB |
+
+¹ The measurement overlapped work queued by the previous test, so it is omitted. The 1-worker "fresh pool" figures in both tables come from a separate run.
+
+Bars show CPU per second of audio with 2 workers; the line marks real time.
+
+```mermaid
+xychart-beta
+    title "CPU seconds per second of audio"
+    x-axis ["1.0.3, 2 CPUs", "2.0.0, 2 CPUs", "1.0.3, 8 CPUs", "2.0.0, 8 CPUs"]
+    y-axis "CPU seconds" 0 --> 2
+    bar [1.83, 0.34, 1.70, 0.34]
+    line [1, 1, 1, 1]
+```
+
+Above the line, one worker needs more than a second of CPU for each second of audio and falls behind.
+
+Observations:
+
+- **One 2.0.0 worker keeps up with real-time speech.** It needs about 0.4 CPU seconds per second of audio; 1.0.3 needs about 1.8, so with one worker it falls behind and playback stalls.
+- **Memory is about 115 MB per warm 2.0.0 worker and stays flat.** A 1.0.3 worker grows with each call until allocation fails: with repeated 100 ms calls it failed after 482 calls, while a 2.0.0 worker completed 3000 calls with its heap steady at 128 MB.
+- **More workers make a fresh pool slower,** most visibly on 2 CPUs (1.96 s with 5 workers, 0.67 s with 1), because all workers build their speech decoders at the same time. A pool that is kept between utterances does not pay this again.
 
 ## Configuration Guidance
 
