@@ -6,7 +6,7 @@ How lip-sync-engine 2.0.0 compares with 1.0.3 and with two other browser lip-syn
 
 Streaming speech in 250 ms chunks, 2 workers, 8 logical CPUs. Accuracy is measured against independent phone labels; see [Head-to-Head](#head-to-head-with-other-browser-lip-sync-libraries) for the method.
 
-| Library and setup | Accuracy¹ | m, b, p shown with closed lips | CPU per second of audio² | Delay before the first cues | Memory per worker |
+| Library and setup | Accuracy¹ (higher is better) | m, b, p shown with closed lips (higher is better) | CPU per second of audio² (lower is better) | Delay before the first cues (lower is better) | Memory per worker (lower is better) |
 |---|---|---|---|---|---|
 | **lip-sync-engine 2.0.0**, context and lookahead | **54.6%** | **92%** | 0.34 s | 120 ms | about 115 MB |
 | lip-sync-engine 1.0.3, chunks analyzed alone | 33.0% | 90% | 1.70 s | 489 ms | about 170 MB, growing |
@@ -23,11 +23,13 @@ In short:
 - **headaudio and wlipsync use 40 to 50 times less CPU** and react within about 30 to 40 ms, but show closed lips for fewer than half of m, b, and p sounds.
 - **2.0.0 changes no output by itself:** with `extendedShapes: ''` and no context or lookahead, it returns the same cues as 1.0.3.
 
+**How often each library shows the right mouth shape. Higher is better.** Scored against hand-labeled speech; random guessing scores 20%. "Streaming" means 250 ms chunks.
+
 ```mermaid
 xychart-beta horizontal
-    title "Accuracy against phone labels (balanced, %)"
-    x-axis ["2.0.0, whole utterance", "2.0.0, context and lookahead", "headaudio 1.1.0", "wlipsync 1.3.1", "1.0.3, chunks alone"]
-    y-axis "Balanced accuracy (%)" 0 --> 60
+    title "Correct mouth shape, % (higher is better)"
+    x-axis ["lip-sync-engine 2.0.0, whole recording", "lip-sync-engine 2.0.0, streaming", "headaudio", "wlipsync", "lip-sync-engine 1.0.3, streaming"]
+    y-axis "Correct mouth shape (%)" 0 --> 60
     bar [55.8, 54.6, 42.5, 42.1, 33.0]
 ```
 
@@ -123,12 +125,12 @@ These tables use the six basic shapes (`extendedShapes: ''`) so that 1.0.3 and 2
 
 The whole utterance analyzed in one call without a transcript reaches 94.2%.
 
-Bars show context and lookahead (burst arrival); the line shows chunks analyzed alone.
+**How closely streaming output matches analyzing the whole recording at once. Higher is better.** Bars: 2.0.0 with context and lookahead. Line: each chunk analyzed alone, as 1.0.3 does.
 
 ```mermaid
 xychart-beta
-    title "Streaming agreement by chunk size (%)"
-    x-axis ["100 ms", "250 ms", "500 ms", "1000 ms"]
+    title "Match with whole-recording analysis, % (higher is better)"
+    x-axis ["100 ms chunks", "250 ms chunks", "500 ms chunks", "1000 ms chunks"]
     y-axis "Agreement (%)" 0 --> 100
     bar [90.4, 88.4, 87.7, 87.9]
     line [41.9, 36.8, 53.0, 68.0]
@@ -203,18 +205,16 @@ The phonetic recognizer is much cheaper but clearly less accurate. It is intende
 
 ¹ The measurement overlapped work queued by the previous test, so it is omitted. The 1-worker "fresh pool" figures in both tables come from a separate run.
 
-Bars show CPU per second of audio with 2 workers; the line marks real time.
+**CPU time needed for each second of speech, with 2 workers. Lower is better.** A bar above the line (1 second) means one worker cannot keep up with real-time speech.
 
 ```mermaid
 xychart-beta
-    title "CPU seconds per second of audio"
+    title "CPU seconds per second of speech (lower is better)"
     x-axis ["1.0.3, 2 CPUs", "2.0.0, 2 CPUs", "1.0.3, 8 CPUs", "2.0.0, 8 CPUs"]
     y-axis "CPU seconds" 0 --> 2
     bar [1.83, 0.34, 1.70, 0.34]
     line [1, 1, 1, 1]
 ```
-
-Above the line, one worker needs more than a second of CPU for each second of audio and falls behind.
 
 Observations:
 
