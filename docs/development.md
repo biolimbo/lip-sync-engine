@@ -50,7 +50,7 @@ lip-sync-engine/
 ├── bench/                # Benchmarks (see BENCHMARK.md)
 ├── examples/             # React, Vue, Svelte, and vanilla examples
 ├── docs/                 # Documentation
-├── scripts/              # Build scripts
+├── scripts/              # Build and release scripts
 ├── build/                # CMake build directory (created by build:wasm)
 └── dist/                 # Built package
     ├── wasm/             # lip-sync-engine.js, .wasm, .data
@@ -193,7 +193,7 @@ The benchmark and quality scripts in `bench/` drive headless Chromium through `p
 
 Releases are published by GitHub Actions (`.github/workflows/publish.yml`) with npm trusted publishing, so no npm token is stored in the repository. The package's trusted publisher on npmjs.com names this repository and the workflow file `publish.yml`.
 
-1. Add the release notes to [CHANGELOG.md](../CHANGELOG.md).
+1. Add the release notes to [CHANGELOG.md](../CHANGELOG.md) under a `## [X.Y.Z] - YYYY-MM-DD` heading. The workflow uses this section as the GitHub release notes.
 2. Bump the version (updates `package.json` and `package-lock.json` without creating a tag):
 
    ```bash
@@ -216,7 +216,7 @@ Releases are published by GitHub Actions (`.github/workflows/publish.yml`) with 
    git push origin vX.Y.Z
    ```
 
-The workflow rejects a tag whose version does not match `package.json` (for a prerelease tag, its `X.Y.Z` part) before anything is published. Any prerelease tag publishes under `next`. To check the workflow without publishing, run it from the Actions tab ("Run workflow") with "dry run" ticked.
+The workflow rejects a tag whose version does not match `package.json` (for a prerelease tag, its `X.Y.Z` part), or a stable tag without a CHANGELOG section, before anything is published. Any prerelease tag publishes under `next`. After publishing, it creates the GitHub release for the tag (a prerelease for prerelease tags), with notes from `scripts/release-notes.mjs`; preview them with `node scripts/release-notes.mjs vX.Y.Z`. To check the workflow without publishing, run it from the Actions tab ("Run workflow") with "dry run" ticked.
 
 ## Troubleshooting
 
