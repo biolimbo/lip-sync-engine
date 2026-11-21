@@ -9,6 +9,8 @@ name: Publish to npm
 # - Tag `vX.Y.Z-rc.N` (any prerelease) publishes under the `next` dist-tag,
 #   so `npm install lip-sync-engine` keeps getting the last stable release.
 #   package.json may say X.Y.Z; the prerelease version is applied in CI only.
+# - Every tag also gets a GitHub release with its CHANGELOG.md section as the
+#   notes (scripts/release-notes.mjs). Prerelease tags get a GitHub prerelease.
 # - Manual run (Actions tab, "Run workflow"): builds, tests and runs
 #   `npm publish --dry-run`. Untick "dry run" to publish package.json's
 #   version for real.
@@ -31,6 +33,9 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub release
+      id-token: write # npm trusted publishing and provenance
 
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +72,12 @@ jobs:
           echo "dist_tag=$dist_tag" >> "$GITHUB_OUTPUT"
           echo "Publishing $version under the '$dist_tag' dist-tag"
 
+      # Checked before publishing, so a missing CHANGELOG section stops the
+      # release before anything reaches npm.
+      - name: Prepare release notes
+        if: github.ref_type == 'tag'
+        run: node scripts/release-notes.mjs "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
+
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:
@@ -97,3 +108,17 @@ jobs:
         env:
           DIST_TAG: ${{ steps.version.outputs.dist_tag }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+
+      - name: Create GitHub release
+        if: github.ref_type == 'tag'
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists"
+            exit 0
+          fi
+          flags="--verify-tag --title $GITHUB_REF_NAME --notes-file $RUNNER_TEMP/release-notes.md"
+          if [ "$DIST_TAG" = "latest" ]; then flags="$flags --latest"; else flags="$flags --prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" $flags
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIST_TAG: ${{ steps.version.outputs.dist_tag }}
