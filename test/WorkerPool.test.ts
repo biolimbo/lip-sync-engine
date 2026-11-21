@@ -555,6 +555,17 @@ describe('StreamAnalyzerController', () => {
     expect(stream.getStats().chunksCompleted).toBe(2);
   });
 
+  it('names end() or finalize() when a chunk is added afterwards', async () => {
+    await initPool();
+    const ended = pool.createStreamAnalyzer();
+    ended.end();
+    expect(() => ended.addChunk(new Int16Array(4))).toThrow('Cannot add chunks after end() has been called');
+
+    const finalized = pool.createStreamAnalyzer();
+    void finalized.finalize();
+    expect(() => finalized.addChunk(new Int16Array(4))).toThrow('Cannot add chunks after finalize() has been called');
+  });
+
   it('does not report unhandled rejections when destroyed before finalize()', async () => {
     const unhandled: unknown[] = [];
     const onUnhandled = (reason: unknown) => unhandled.push(reason);

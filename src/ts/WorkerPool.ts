@@ -882,8 +882,8 @@ export class StreamAnalyzerController {
    * @returns The index of this chunk in the result array
    */
   addChunk(chunk: Int16Array): number {
-    if (this.finalized || this.ended) {
-      throw new Error('Cannot add chunks after finalize() has been called');
+    if (this.ended) {
+      throw new Error(`Cannot add chunks after ${this.finalized ? 'finalize()' : 'end()'} has been called`);
     }
 
     const index = this.chunks.length;
