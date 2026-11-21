@@ -62,9 +62,9 @@ const lipSyncEngine = LipSyncEngine.getInstance();
 
 #### `init(options?)`
 
-Loads the WASM module and starts the engine. Calling it is optional: `analyze()` calls it with the default (CDN) paths. Call it yourself, before any `analyze()`, to load self-hosted files or to load the engine ahead of the first analysis.
+Loads the WASM module and starts the engine. Calling it is optional: `analyze()` calls it without options, which loads the default (CDN) paths. Call it yourself, before any `analyze()`, to load self-hosted files or to load the engine ahead of the first analysis.
 
-The module loads once per page. Later calls, including calls on a new instance after `destroy()`, share that load and ignore their options, so the options of the first load win. A failed load is not kept: the next `init()` or `analyze()` loads again, with its own options. `analyzeAsync()` does not use this module or its options.
+The module loads once per page. Later calls, including calls on a new instance after `destroy()`, share that load and ignore their options, so the options of the first load win. A failed load is not kept: the next `init()` or `analyze()` loads again. `init(options)` loads with the options it is given. `init()` without options, and `analyze()`, load with the options of the last `init(options)` call that started a load, or with the default paths if there was none, so a self-hosted app that retries through `analyze()` does not switch to the CDN. [`destroy()`](#destroy) forgets those options. `analyzeAsync()` does not use this module or its options.
 
 **Parameters:**
 - `options?: WasmLoaderOptions`: file paths and preloaded assets (see [`WasmLoaderOptions`](#wasmloaderoptions)). Paths default to the [default asset URLs](#default-asset-urls).
@@ -150,7 +150,7 @@ const result = await LipSyncEngine.getInstance().analyzeAsync(pcm16, {
 
 #### `destroy()`
 
-Drops this instance; the next `getInstance()` returns a new one. The loaded WASM module stays cached and is reused by later instances. Call [`WasmLoader.reset()`](#reset) as well to let it be garbage-collected. Does not affect the `WorkerPool`.
+Drops this instance and the options passed to `init()`; the next `getInstance()` returns a new one. The loaded WASM module stays cached and is reused by later instances. Call [`WasmLoader.reset()`](#reset) as well to let it be garbage-collected. Does not affect the `WorkerPool`.
 
 **Parameters:** none.
 
@@ -712,7 +712,7 @@ WasmLoader.reset();
 
 ### `analyze(pcm16, options?)`
 
-Shorthand for `LipSyncEngine.getInstance().analyze(pcm16, options)`: analyzes on the main thread, loading the engine with the default paths if needed.
+Shorthand for `LipSyncEngine.getInstance().analyze(pcm16, options)`: analyzes on the main thread, loading the engine if needed with the options of an earlier `init(options)` call, or with the default paths if there was none.
 
 **Parameters:**
 - `pcm16: Int16Array`: mono 16-bit PCM audio.

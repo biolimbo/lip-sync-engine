@@ -56,6 +56,8 @@ export class LipSyncEngine {
   private module: LipSyncEngineModule | null = null;
   private initialized = false;
   private initPromise: Promise<void> | null = null;
+  /** Options of the last init(options) call that started a load */
+  private loadOptions: WasmLoaderOptions | undefined;
 
   private constructor() {}
 
@@ -72,22 +74,29 @@ export class LipSyncEngine {
   /**
    * Load the WASM module and start the engine.
    *
-   * Optional: analyze() calls it with the default (CDN) paths. Call it
-   * yourself, before any analyze(), to load self-hosted files or to load the
-   * engine ahead of the first analysis. The module loads once per page;
-   * calls made while it loads or after it loaded share that load and ignore
-   * their options. A failed load is not kept: the next init() or analyze()
-   * loads again.
+   * Optional: analyze() calls it without options, which loads the default
+   * (CDN) paths. Call it yourself, before any analyze(), to load self-hosted
+   * files or to load the engine ahead of the first analysis. The module
+   * loads once per page; calls made while it loads or after it loaded share
+   * that load and ignore their options. A failed load is not kept: the next
+   * init() or analyze() loads again. A call without options then reuses the
+   * options of the last init(options) call that started a load, until
+   * destroy().
    *
    * @param options - Optional paths to WASM files
    */
-  async init(options: WasmLoaderOptions = {}): Promise<void> {
+  async init(options?: WasmLoaderOptions): Promise<void> {
     if (this.initialized) return;
     if (this.initPromise) return this.initPromise;
 
+    if (options) {
+      this.loadOptions = options;
+    }
+    const loadOptions = this.loadOptions ?? {};
+
     const promise: Promise<void> = (async () => {
       // Load WASM module
-      this.module = await WasmLoader.load(options);
+      this.module = await WasmLoader.load(loadOptions);
 
       // Initialize LipSyncEngine with models
       const modelsPath = '/models';
@@ -122,7 +131,9 @@ export class LipSyncEngine {
 
   /**
    * Analyze audio on the main thread and return its mouth cues. Calls init()
-   * first if needed. The main thread is blocked while the analysis runs.
+   * without options first if needed, so a retry after a failed
+   * init(options) loads the same paths. The main thread is blocked while the
+   * analysis runs.
    *
    * @param pcm16 - 16-bit PCM audio buffer (mono, 16kHz recommended)
    * @param options - Optional configuration
@@ -238,30 +249,30 @@ export class LipSyncEngine {
   }
 
   /**
-   * Drop this instance; the next getInstance() returns a new one. The loaded
-   * WASM module stays cached and is reused by later instances; call
-   * WasmLoader.reset() as well to let it be garbage-collected. Does not
-   * affect the WorkerPool.
+   * Drop this instance and the options passed to init(); the next
+   * getInstance() returns a new one. The loaded WASM module stays cached and
+   * is reused by later instances; call WasmLoader.reset() as well to let it
+   * be garbage-collected. Does not affect the WorkerPool.
    */
   destroy(): void {
     this.module = null;
     this.initialized = false;
     this.initPromise = null;
+    this.loadOptions = undefined;
     LipSyncEngine.instance = null;
   }
 }
 
 /**
  * Shorthand for LipSyncEngine.getInstance().analyze(): analyzes on the main
- * thread, loading the engine with the default paths if needed.
+ * thread, loading the engine if needed (with the options of an earlier
+ * init(options) call, otherwise the default paths).
  */
 export const analyze = async (
   pcm16: Int16Array,
   options?: LipSyncEngineOptions
 ): Promise<LipSyncEngineResult> => {
-  const instance = LipSyncEngine.getInstance();
-  await instance.init();
-  return instance.analyze(pcm16, options);
+  return LipSyncEngine.getInstance().analyze(pcm16, options);
 };
 
 /**
