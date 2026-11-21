@@ -48,7 +48,7 @@ Pin the version in every URL. With no paths, `init()` loads the WASM files and t
 
 ```html
 <script type="module">
-  import { LipSyncEngine, WorkerPool } from 'https://unpkg.com/lip-sync-engine@2.0.0/dist/index.mjs';
+  import { LipSyncEngine, WorkerPool } from 'https://unpkg.com/lip-sync-engine@2.0.1/dist/index.mjs';
 
   // Main thread
   const lipSyncEngine = LipSyncEngine.getInstance();
@@ -77,7 +77,7 @@ The blocks below are steps of one module script: each continues the previous one
 ### 1. Initialize Once and Keep Alive
 
 ```javascript
-import { LipSyncEngine, WorkerPool, recordAudio, loadAudio } from 'https://unpkg.com/lip-sync-engine@2.0.0/dist/index.mjs';
+import { LipSyncEngine, WorkerPool, recordAudio, loadAudio } from 'https://unpkg.com/lip-sync-engine@2.0.1/dist/index.mjs';
 
 const lipSyncEngine = LipSyncEngine.getInstance();
 await lipSyncEngine.init();
