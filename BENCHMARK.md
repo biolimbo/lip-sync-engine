@@ -26,9 +26,9 @@ In short:
 ```mermaid
 xychart-beta horizontal
     title "Accuracy against phone labels (balanced, %)"
-    x-axis ["1.0.3, chunks alone", "wlipsync 1.3.1", "headaudio 1.1.0", "2.0.0, context and lookahead", "2.0.0, whole utterance"]
+    x-axis ["2.0.0, whole utterance", "2.0.0, context and lookahead", "headaudio 1.1.0", "wlipsync 1.3.1", "1.0.3, chunks alone"]
     y-axis "Balanced accuracy (%)" 0 --> 60
-    bar [33.0, 42.1, 42.5, 54.6, 55.8]
+    bar [55.8, 54.6, 42.5, 42.1, 33.0]
 ```
 
 ## Test Setup
