@@ -39,15 +39,15 @@ export interface LipSyncEngineOptions {
 
   /**
    * Rhubarb's extended mouth shapes to use in addition to A-F: any
-   * combination of 'G' (F, V), 'H' (L) and 'X' (idle). Default 'GHX' (all
-   * nine shapes) since 2.0.0. Use '' for basic shapes A-F only, as in 1.x.
+   * combination of 'G' (F, V), 'H' (L) and 'X' (idle), in any order and case.
+   * Default 'GHX' (all nine shapes). Use '' for the basic shapes A-F only.
    */
   extendedShapes?: string;
 
   /**
-   * Sample rate of the audio buffer
+   * Sample rate of the audio buffer in Hz. Higher rates are converted down
+   * to 16000 internally; rates below 16000 are not supported.
    * @default 16000
-   * @recommended 16000 for best PocketSphinx results
    */
   sampleRate?: number;
 }
@@ -62,7 +62,8 @@ export interface LipSyncEngineOptions {
 export type RecognizerKind = 'pocketsphinx' | 'phonetic';
 
 /**
- * Progress callback for analysis
+ * Progress callback type.
+ * @deprecated Not used by any API.
  */
 export type ProgressCallback = (progress: number) => void;
 
@@ -73,11 +74,11 @@ export interface LipSyncEngineModule {
   _malloc(size: number): number;
   _free(ptr: number): void;
   _lipsyncengine_init(modelsPathPtr: number): number;
-  /** Builds the speech decoder ahead of the first analysis (2.0.0+) */
+  /** Builds the speech decoder ahead of the first analysis */
   _lipsyncengine_prewarm?(): number;
-  /** 0 = PocketSphinx words (default), 1 = phonetic (2.0.0+) */
+  /** 0 = PocketSphinx words (default), 1 = phonetic */
   _lipsyncengine_set_recognizer?(kind: number): number;
-  /** Extended shapes on top of A-F, any of "GHX" (2.0.0+) */
+  /** Extended shapes on top of A-F, any of "GHX" */
   _lipsyncengine_set_extended_shapes?(shapesPtr: number): number;
   _lipsyncengine_analyze_pcm16(
     pcm16Ptr: number,
@@ -87,7 +88,8 @@ export interface LipSyncEngineModule {
   ): number;
   _lipsyncengine_free(ptr: number): void;
   _lipsyncengine_get_last_error(): number;
-  _lipsyncengine_cleanup(): void; // Phase 0: Decoder cleanup
+  /** Frees the speech decoder */
+  _lipsyncengine_cleanup(): void;
   HEAP16: Int16Array;
   lengthBytesUTF8(str: string): number;
   stringToUTF8(str: string, ptr: number, maxLen: number): void;
@@ -95,7 +97,8 @@ export interface LipSyncEngineModule {
 }
 
 /**
- * WASM loader options
+ * Where to load the engine from. Paths default to the CDN files of the
+ * installed version.
  */
 export interface WasmLoaderOptions {
   /** Path to the .wasm file */

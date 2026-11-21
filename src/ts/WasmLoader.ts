@@ -188,7 +188,7 @@ export class WasmLoader {
           // Import the Emscripten JS file
           importScripts(jsPath);
 
-          // The factory function is now available in global scope
+          // importScripts() defined the factory in the global scope
           const createModule = (self as any).createLipSyncEngineModule;
 
           if (!createModule) {

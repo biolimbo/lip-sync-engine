@@ -8,19 +8,19 @@ import { WasmLoader } from './WasmLoader';
 import { applyExtendedShapes } from './extendedShapes';
 
 /**
- * Main API class for Lip Sync
- * Framework-agnostic - works with vanilla JS, React, Vue, Svelte, etc.
+ * Main-thread lip sync engine (singleton).
+ * Framework-agnostic: works with vanilla JS, React, Vue, Svelte, and others.
  *
  * @example Vanilla JavaScript
  * ```typescript
  * import { LipSyncEngine } from 'lip-sync-engine';
  *
  * const lipSyncEngine = LipSyncEngine.getInstance();
- * await lipSyncEngine.init();
+ * await lipSyncEngine.init(); // optional: analyze() loads the engine too
  *
  * const result = await lipSyncEngine.analyze(pcm16Buffer, {
- *   dialogText: "Hello world",
- *   sampleRate: 16000
+ *   dialogText: 'Hello world',
+ *   sampleRate: 16000,
  * });
  *
  * console.log(result.mouthCues);
@@ -28,19 +28,23 @@ import { applyExtendedShapes } from './extendedShapes';
  *
  * @example React
  * ```typescript
- * // Create a custom hook in your app
+ * import { useEffect, useState } from 'react';
+ * import { LipSyncEngine } from 'lip-sync-engine';
+ * import type { LipSyncEngineOptions, LipSyncEngineResult } from 'lip-sync-engine';
+ *
+ * // A custom hook in your app. The engine is shared by the whole page, so
+ * // the hook does not destroy it when the component unmounts.
  * function useLipSyncEngine() {
- *   const [result, setResult] = useState(null);
- *   const lipSyncEngineRef = useRef(LipSyncEngine.getInstance());
+ *   const [result, setResult] = useState<LipSyncEngineResult | null>(null);
  *
  *   useEffect(() => {
- *     lipSyncEngineRef.current.init();
- *     return () => lipSyncEngineRef.current.destroy();
+ *     // Start loading early. analyze() waits for this load, and loads again
+ *     // (reporting the error) if it failed.
+ *     LipSyncEngine.getInstance().init().catch(() => {});
  *   }, []);
  *
- *   const analyze = async (pcm16, options) => {
- *     const result = await lipSyncEngineRef.current.analyze(pcm16, options);
- *     setResult(result);
+ *   const analyze = async (pcm16: Int16Array, options?: LipSyncEngineOptions) => {
+ *     setResult(await LipSyncEngine.getInstance().analyze(pcm16, options));
  *   };
  *
  *   return { analyze, result };
@@ -56,7 +60,7 @@ export class LipSyncEngine {
   private constructor() {}
 
   /**
-   * Get singleton instance
+   * Get the singleton instance, creating it on the first call or after destroy()
    */
   static getInstance(): LipSyncEngine {
     if (!this.instance) {
@@ -117,7 +121,8 @@ export class LipSyncEngine {
   }
 
   /**
-   * Analyze audio and generate lip-sync-engine data
+   * Analyze audio on the main thread and return its mouth cues. Calls init()
+   * first if needed. The main thread is blocked while the analysis runs.
    *
    * @param pcm16 - 16-bit PCM audio buffer (mono, 16kHz recommended)
    * @param options - Optional configuration
@@ -125,6 +130,7 @@ export class LipSyncEngine {
    *
    * @throws {TypeError} If pcm16 is not an Int16Array
    * @throws {Error} If audio buffer is empty
+   * @throws {Error} If the engine cannot load (see init())
    * @throws {Error} If analysis fails
    */
   async analyze(
@@ -208,8 +214,11 @@ export class LipSyncEngine {
   }
 
   /**
-   * Analyze audio using Web Worker (non-blocking)
-   * Recommended for long audio files to avoid blocking UI
+   * Analyze audio in a Web Worker so the main thread stays responsive. Uses
+   * the shared WorkerPool: WorkerPool.getInstance() without arguments and
+   * init() without options, so paths passed to this class's init() are not
+   * used. To self-host or choose the worker count, start the pool yourself
+   * before the first call. The pool keeps running afterwards.
    *
    * @param pcm16 - 16-bit PCM audio buffer
    * @param options - Optional configuration
@@ -229,8 +238,10 @@ export class LipSyncEngine {
   }
 
   /**
-   * Destroy the instance and free resources
-   * Call this when you're completely done with lip-sync-engine analysis
+   * Drop this instance; the next getInstance() returns a new one. The loaded
+   * WASM module stays cached and is reused by later instances; call
+   * WasmLoader.reset() as well to let it be garbage-collected. Does not
+   * affect the WorkerPool.
    */
   destroy(): void {
     this.module = null;
@@ -241,8 +252,8 @@ export class LipSyncEngine {
 }
 
 /**
- * Convenience function for one-off analysis
- * Framework-agnostic - works everywhere
+ * Shorthand for LipSyncEngine.getInstance().analyze(): analyzes on the main
+ * thread, loading the engine with the default paths if needed.
  */
 export const analyze = async (
   pcm16: Int16Array,
@@ -254,7 +265,9 @@ export const analyze = async (
 };
 
 /**
- * Convenience function for async analysis with Web Worker
+ * Shorthand for LipSyncEngine.getInstance().analyzeAsync(): analyzes in a
+ * worker of the shared WorkerPool, starting the pool with its defaults if it
+ * is not running.
  */
 export const analyzeAsync = async (
   pcm16: Int16Array,

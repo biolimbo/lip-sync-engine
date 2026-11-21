@@ -121,7 +121,7 @@ async function initializeWorker(
       wasmModule._lipsyncengine_set_recognizer(1);
     }
 
-    // Build the speech decoder now (off the main thread) so the first chunk
+    // Build the speech decoder during init (off the main thread) so the first chunk
     // does not pay for loading the models.
     if (prewarm && typeof wasmModule._lipsyncengine_prewarm === 'function') {
       if (wasmModule._lipsyncengine_prewarm() !== 0) {

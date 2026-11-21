@@ -132,14 +132,18 @@ export class WorkerPool {
   }
 
   /**
-   * Initialize the worker pool
-   * Must be called before using analyze()
+   * Start the pool with one worker. Must finish before analyze(),
+   * analyzeChunks(), createStreamAnalyzer(), or warmup(). Use warmup() to
+   * start the remaining workers up to maxWorkers.
    *
-   * Starts a single worker for fast initialization. Use warmup() to start the
-   * remaining workers up to maxWorkers. Concurrent calls share one startup,
-   * and the options of the first call apply.
+   * Calls made while startup is in progress share that startup, and calls
+   * made after the pool has started resolve at once; both ignore their
+   * options. After a failed startup, or after every worker has failed,
+   * init() starts the pool again.
    *
-   * Rejects with WorkerPoolDestroyedError if destroy() is called before startup finishes.
+   * Rejects with `Worker failed to load: ...` or `Worker initialization
+   * failed: ...` when the worker cannot start, and with
+   * WorkerPoolDestroyedError if destroy() is called before startup finishes.
    */
   async init(options?: {
     wasmPath?: string;
@@ -154,9 +158,9 @@ export class WorkerPool {
     /**
      * Compile the .wasm once: the first worker sends its compiled module back
      * and later workers (and pools created later) reuse it instead of
-     * compiling again. Default true. (The .data file is not shared: copying
-     * it into each worker cost more memory than it saved time; workers fetch
-     * it from the HTTP cache.)
+     * compiling again. Default true. Each worker still loads its own copy of
+     * the .data file, normally from the browser's HTTP cache after the first
+     * download.
      */
     shareAssets?: boolean;
     /**
@@ -200,18 +204,19 @@ export class WorkerPool {
   }
 
   /**
-   * Pre-create all workers up to maxWorkers
-   * Call this during app initialization to eliminate worker creation overhead
+   * Start workers until the pool has maxWorkers, counting workers that are
+   * running or starting. The pool never adds workers on its own, so call it
+   * before parallel work. Resolves at once when the pool is full.
    *
    * Rejects as soon as one worker fails to start. Workers that start
-   * successfully stay in the pool. Concurrent calls share one warmup.
+   * successfully stay in the pool, and calling warmup() again starts only
+   * the missing ones. Concurrent calls share one warmup.
    *
    * @example
    * ```typescript
-   * const pool = WorkerPool.getInstance();
-   * await pool.init({ ... });
-   * await pool.warmup(); // Pre-create all workers
-   * // Now all workers are ready for chunked processing
+   * const pool = WorkerPool.getInstance(4);
+   * await pool.init();
+   * await pool.warmup(); // all four workers are ready for parallel work
    * ```
    */
   async warmup(): Promise<void> {
@@ -620,7 +625,10 @@ export class WorkerPool {
   }
 
   /**
-   * Analyze multiple audio buffers in parallel using chunked processing
+   * Analyze each chunk as a separate job, in parallel across the started
+   * workers (call warmup() first to start up to maxWorkers). Each chunk is
+   * analyzed on its own and its cue times start at 0; add each chunk's start
+   * time to place its cues on a shared timeline.
    *
    * @param chunks - Array of audio chunks to process
    * @param options - Optional configuration
@@ -644,16 +652,18 @@ export class WorkerPool {
    * Returns a controller that lets you add chunks as they arrive from a stream
    *
    * @param options - Optional configuration for all chunks
-   * @returns StreamController with addChunk() and finalize() methods
+   * @returns StreamAnalyzerController with addChunk(), end(), getResult() and finalize()
    *
    * @example
    * ```typescript
-   * const stream = pool.createStreamAnalyzer({ dialogText: "hello" });
-   * await pool.warmup(); // Pre-create workers
+   * const pool = WorkerPool.getInstance(2);
+   * await pool.init();
+   * await pool.warmup();
+   * const stream = pool.createStreamAnalyzer({ contextMs: 500, lookaheadMs: 500 });
    *
    * // Add chunks as they arrive from your audio stream
    * for await (const chunk of audioStream) {
-   *   stream.addChunk(chunk); // Non-blocking, queues immediately
+   *   stream.addChunk(chunk); // returns at once
    * }
    *
    * // Wait for all chunks to complete and get results in order
@@ -763,14 +773,14 @@ export class WorkerPool {
  */
 export interface StreamAnalyzerOptions extends LipSyncEngineOptions {
   /**
-   * Milliseconds of earlier audio analysed together with each chunk
-   * (default 0). Gives the recogniser context across chunk boundaries.
+   * Milliseconds of earlier audio analyzed together with each chunk
+   * (default 0). Gives the recognizer context across chunk boundaries.
    * Recommended: 500.
    */
   contextMs?: number;
   /**
-   * Milliseconds of later audio to wait for and analyse together with each
-   * chunk (default 0). Short chunks analysed without the audio that follows
+   * Milliseconds of later audio to wait for and analyze together with each
+   * chunk (default 0). Short chunks analyzed without the audio that follows
    * them lose most of their mouth shapes; see BENCHMARK.md. The controller
    * never waits past a chunk's estimated playback time (see
    * `deadlineMarginMs`), and never for the first chunk unless
@@ -795,7 +805,7 @@ export interface StreamAnalyzerOptions extends LipSyncEngineOptions {
   maxWaitMs?: number;
   /**
    * Maximum analyses of this stream running at once (default 2; windowed mode
-   * only). Chunks that become ready together are analysed in one window, so
+   * only). Chunks that become ready together are analyzed in one window, so
    * a low number keeps CPU use down. Needs at least this many pool workers to
    * run in parallel.
    */
@@ -817,10 +827,10 @@ interface StreamChunk {
  * Controller for dynamic streaming analysis
  * Allows adding chunks on-the-fly as they arrive from a stream
  *
- * Without `contextMs`/`lookaheadMs` every chunk is analysed on its own as soon
- * as it is added (1.0.x behaviour). With them, each chunk is analysed inside a
- * window of surrounding audio and only its own cues are returned, with times
- * relative to the chunk start.
+ * Without `contextMs`/`lookaheadMs` every chunk is analyzed on its own as soon
+ * as it is added. With them, each chunk is analyzed inside a window of
+ * surrounding audio and only its own cues are returned. In both modes cue
+ * times are relative to the chunk start.
  */
 export class StreamAnalyzerController {
   private pool: WorkerPool;
@@ -843,7 +853,7 @@ export class StreamAnalyzerController {
   private ended = false;
   private firstResultAt: number | null = null;
   private addedAt: number[] = [];
-  /** Estimated analysis time, ms per second of analysed audio */
+  /** Estimated analysis time, ms per second of analyzed audio */
   private msPerAudioSecond = 400;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private completed = 0;
@@ -880,6 +890,7 @@ export class StreamAnalyzerController {
    *
    * @param chunk - Audio chunk to analyze
    * @returns The index of this chunk in the result array
+   * @throws {Error} After end() or finalize() has been called
    */
   addChunk(chunk: Int16Array): number {
     if (this.ended) {
@@ -896,7 +907,7 @@ export class StreamAnalyzerController {
     this.addedAt.push(now());
 
     if (!this.windowed) {
-      // 1.0.x behaviour: analyse on its own, right away
+      // Separate chunks: analyze this chunk on its own, right away
       this.pool.analyze(chunk, this.options).then(resolve, reject);
       return index;
     }
@@ -909,7 +920,7 @@ export class StreamAnalyzerController {
 
   /**
    * Signal that no more chunks will be added. Chunks still waiting for
-   * lookahead are analysed with whatever audio follows them.
+   * lookahead are analyzed with whatever audio follows them.
    */
   end(): void {
     this.ended = true;
@@ -1002,13 +1013,13 @@ export class StreamAnalyzerController {
         return;
       }
       // Batch following chunks that already have their lookahead, but only
-      // as much audio as can be analysed before the first one plays.
+      // as much audio as can be analyzed before the first one plays.
       const batch = [first];
       let covered = first.length;
       const firstAlone = first.index === 0 && !this.firstChunkLookahead;
       const budget = this.batchBudgetSamples(first, t);
       // Not even `first` fits with full lookahead, but would with less:
-      // analyse it alone with the lookahead that fits.
+      // analyze it alone with the lookahead that fits.
       const fitLookahead = this.lookaheadThatFits(first, t);
       while (!firstAlone && fitLookahead === null) {
         const next = this.chunks[this.nextToAnalyze + batch.length];
@@ -1112,7 +1123,7 @@ export class StreamAnalyzerController {
   /** Sample offset of this.audio[0] */
   private audioBase = 0;
 
-  /** Drop audio no longer needed as context for unanalysed chunks */
+  /** Drop audio that chunks still to be analyzed do not need as context */
   private releaseAudio(): void {
     const next = this.chunks[this.nextToAnalyze];
     const keepFrom = next ? next.start - this.contextSamples : this.totalSamples - this.contextSamples;
