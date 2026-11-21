@@ -114,6 +114,18 @@ Reference: each whole utterance analyzed in one call with its transcript. Result
 
 These tables use the six basic shapes (`extendedShapes: ''`) so that 1.0.3 and 2.0.0 compare like for like. "Context and lookahead" means `createStreamAnalyzer({ contextMs: 500, lookaheadMs: 500 })`, measured end to end. "Burst" means the audio arrives faster than playback; "3x" means it arrives at three times playback speed.
 
+**Does streaming look as good as analyzing the full recording? Higher is better.** When audio arrives in small chunks (here 250 ms each), the engine sees less of the speech than when it analyzes the whole recording at once. Each bar shows how often the streamed result has the same mouth shape as the full-recording result; 100% would mean streaming looks identical.
+
+```mermaid
+xychart-beta horizontal
+    title "Same mouth shape as the full recording, % (higher is better)"
+    x-axis ["2.0.0, context and lookahead", "2.0.0, context only", "1.0.3, each chunk alone"]
+    y-axis "Same mouth shape (%)" 0 --> 100
+    bar [88.4, 54.0, 36.8]
+```
+
+"Context" lets each chunk see the audio before it, and "lookahead" the audio after it. The table below has results for other chunk sizes.
+
 **Agreement:**
 
 | Setup | 100 ms chunks | 250 ms | 500 ms | 1000 ms |
@@ -124,17 +136,6 @@ These tables use the six basic shapes (`extendedShapes: ''`) so that 1.0.3 and 2
 | Context and lookahead, 3x | 83.4% | 81.8% | 83.1% | 85.3% |
 
 The whole utterance analyzed in one call without a transcript reaches 94.2%.
-
-**How closely streaming output matches analyzing the whole recording at once. Higher is better.** Bars: 2.0.0 with context and lookahead. Line: each chunk analyzed alone, as 1.0.3 does.
-
-```mermaid
-xychart-beta
-    title "Match with whole-recording analysis, % (higher is better)"
-    x-axis ["100 ms chunks", "250 ms chunks", "500 ms chunks", "1000 ms chunks"]
-    y-axis "Agreement (%)" 0 --> 100
-    bar [90.4, 88.4, 87.7, 87.9]
-    line [41.9, 36.8, 53.0, 68.0]
-```
 
 **False closures:**
 
