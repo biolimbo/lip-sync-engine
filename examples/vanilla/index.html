@@ -491,7 +491,7 @@
     const useLocalBuild = new URLSearchParams(location.search).has('local');
     const DIST = useLocalBuild
       ? new URL('../../dist/', location.href).href
-      : 'https://unpkg.com/lip-sync-engine@2.0.0/dist/';
+      : 'https://unpkg.com/lip-sync-engine@2.0.1/dist/';
     const WASM_PATHS = {
       wasmPath: `${DIST}wasm/lip-sync-engine.wasm`,
       dataPath: `${DIST}wasm/lip-sync-engine.data`,
