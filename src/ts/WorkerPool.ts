@@ -58,6 +58,7 @@ const isRemoteUrl = (url: string) => url.startsWith('http://') || url.startsWith
 function stopWorker(worker: Worker): void {
   worker.onmessage = null;
   worker.onerror = null;
+  worker.onmessageerror = null;
   worker.terminate();
 }
 
@@ -409,6 +410,13 @@ export class WorkerPool {
 
         console.error('Worker error:', event);
         this.removeWorker(poolWorker, new Error(`Worker crashed: ${detail}`));
+      };
+
+      // A reply that cannot be deserialized would otherwise leave startup pending
+      worker.onmessageerror = () => {
+        if (!poolWorker.ready) {
+          fail(new Error('Worker initialization failed: could not read the worker\'s reply'));
+        }
       };
 
       // Send init message. A compiled module is shared, not copied; without

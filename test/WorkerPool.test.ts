@@ -303,6 +303,52 @@ describe('WorkerPool startup', () => {
   });
 });
 
+describe('WorkerPool startup failures', () => {
+  const DATA_ERROR = 'Worker initialization failed: Failed to load model data from /lip-sync-engine.data: network error';
+
+  it('rejects warmup() when a worker cannot load the .data file, and retries only the missing workers', async () => {
+    await initPool();
+
+    const warmup = pool.warmup();
+    await waitForWorkers(3);
+    const [, second, third] = StubWorker.instances;
+    third.emitMessage({ type: 'ready' });
+    second.emitMessage({ type: 'error', error: DATA_ERROR });
+
+    await expect(warmup).rejects.toThrow(DATA_ERROR);
+    expect(second.terminated).toBe(true);
+    expect(pool.getStats().totalWorkers).toBe(2);
+
+    const retry = pool.warmup();
+    await waitForWorkers(4);
+    expect(StubWorker.instances).toHaveLength(4);
+    StubWorker.instances[3].emitMessage({ type: 'ready' });
+    await expect(retry).resolves.toBeUndefined();
+    expect(pool.getStats().totalWorkers).toBe(3);
+  });
+
+  it('rejects init() with the data error and starts a new worker on the next init()', async () => {
+    const init = pool.init();
+    await waitForWorkers(1);
+    StubWorker.instances[0].emitMessage({ type: 'error', error: DATA_ERROR });
+    await expect(init).rejects.toThrow(DATA_ERROR);
+
+    const worker = await initPool();
+    expect(worker).toBe(StubWorker.instances[1]);
+    expect(pool.getStats().totalWorkers).toBe(1);
+  });
+
+  it('rejects init() when the worker\'s reply cannot be read', async () => {
+    const init = pool.init();
+    await waitForWorkers(1);
+    const worker = StubWorker.instances[0] as unknown as { onmessageerror: (() => void) | null };
+    worker.onmessageerror?.();
+
+    await expect(init).rejects.toThrow('could not read the worker\'s reply');
+    expect(StubWorker.instances[0].terminated).toBe(true);
+  });
+});
+
 describe('WorkerPool CDN worker script', () => {
   const CDN_URL = 'https://cdn.example/worker.js';
 

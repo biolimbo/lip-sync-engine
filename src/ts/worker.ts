@@ -3,7 +3,7 @@
  * This file runs inside a Web Worker context and handles analysis requests
  */
 
-import { WasmLoader } from './WasmLoader';
+import { WasmLoader, compileWasm } from './WasmLoader';
 import { applyExtendedShapes } from './extendedShapes';
 import type { LipSyncEngineModule, LipSyncEngineOptions, LipSyncEngineResult, RecognizerKind } from './types';
 
@@ -70,31 +70,35 @@ let modelsPath = '/models';
 /**
  * Initialize WASM module in worker context
  */
-/** Compile the .wasm in this worker so the module can be shared */
-async function compileModule(wasmPath: string): Promise<WebAssembly.Module | undefined> {
-  try {
-    return typeof WebAssembly.compileStreaming === 'function'
-      ? await WebAssembly.compileStreaming(fetch(wasmPath))
-      : await WebAssembly.compile(await (await fetch(wasmPath)).arrayBuffer());
-  } catch {
-    return undefined; // fall back to Emscripten's own loading
-  }
-}
-
 async function initializeWorker(
   message: WorkerInitRequest
 ): Promise<{ warm: boolean; compiled?: WebAssembly.Module }> {
   const { wasmPath, dataPath, jsPath } = message;
   const prewarm = message.prewarm !== false;
+  // An error in one of Emscripten's own async steps is an unhandled
+  // rejection that leaves the module pending forever. Treat it as a failed
+  // start while the module loads.
+  let onUnhandled: (event: PromiseRejectionEvent) => void = () => {};
+  const unhandled = new Promise<never>((_, reject) => {
+    onUnhandled = (event) => {
+      event.preventDefault();
+      reject(event.reason);
+    };
+  });
+  unhandled.catch(() => {});
+  self.addEventListener('unhandledrejection', onUnhandled);
   try {
-    const compiled = message.wasmModule ?? (message.returnModule ? await compileModule(wasmPath) : undefined);
-    wasmModule = await WasmLoader.loadModule({
-      wasmPath,
-      dataPath,
-      jsPath,
-      wasmModule: compiled,
-      dataBuffer: message.dataBuffer
-    });
+    const compiled = message.wasmModule ?? (message.returnModule ? await compileWasm(wasmPath) : undefined);
+    wasmModule = await Promise.race([
+      unhandled,
+      WasmLoader.loadModule({
+        wasmPath,
+        dataPath,
+        jsPath,
+        wasmModule: compiled,
+        dataBuffer: message.dataBuffer
+      })
+    ]);
     const sendBack = message.returnModule ? compiled : undefined;
 
     // Initialize the engine
@@ -129,6 +133,8 @@ async function initializeWorker(
     return { warm: false, compiled: sendBack };
   } catch (error) {
     throw new Error(`Worker initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    self.removeEventListener('unhandledrejection', onUnhandled);
   }
 }
 
