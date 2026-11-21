@@ -1,6 +1,7 @@
 # Getting Started with lip-sync-engine
 
-This guide will help you get up and running with lip-sync-engine in your project.
+This guide covers installing `lip-sync-engine`, analyzing your first audio, framework integration,
+and self-hosting the WASM files.
 
 ## Installation
 
@@ -10,127 +11,138 @@ npm install lip-sync-engine
 
 ## Basic Usage
 
-### 1. Import the Library
+### 1. Get Audio Data
+
+The library analyzes mono 16-bit PCM audio (`Int16Array`). Use one of these helpers to get it.
+
+#### Option A: Record from the Microphone
 
 ```typescript
-import { analyze, recordAudio } from 'lip-sync-engine';
-```
+import { recordAudio } from 'lip-sync-engine';
 
-### 2. Get Audio Data
-
-You have several options:
-
-#### Option A: Record from Microphone
-
-```typescript
-// Record 5 seconds of audio
+// Record 5 seconds of audio as 16 kHz PCM
 const { pcm16, audioBuffer } = await recordAudio(5000);
 ```
 
-#### Option B: Load from File
+Recording needs a secure page (HTTPS or `localhost`), an available microphone, and the user's
+permission. See [Microphone Access Fails](#microphone-access-fails).
+
+#### Option B: Load from a File or URL
 
 ```typescript
 import { loadAudio } from 'lip-sync-engine';
 
-// From file input
-const file = event.target.files[0];
-const { pcm16 } = await loadAudio(file);
+// From a file input
+const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+const file = input?.files?.[0];
+if (file) {
+  const fromFile = await loadAudio(file);
+  console.log(fromFile.pcm16.length);
+}
 
-// From URL
-const { pcm16 } = await loadAudio('https://example.com/audio.mp3');
+// From a URL
+const fromUrl = await loadAudio('https://example.com/audio.mp3');
 ```
 
-#### Option C: Convert Existing AudioBuffer
+Both calls decode the audio and return `{ pcm16, audioBuffer }` at 16 kHz.
+
+#### Option C: Convert an Existing AudioBuffer
 
 ```typescript
 import { audioBufferToInt16 } from 'lip-sync-engine';
 
-// You already have an AudioBuffer
+// For example, an AudioBuffer decoded with the Web Audio API
+const response = await fetch('https://example.com/audio.mp3');
+const myAudioBuffer = await new AudioContext().decodeAudioData(await response.arrayBuffer());
+
+// Uses the first channel and resamples it to 16 kHz
 const pcm16 = audioBufferToInt16(myAudioBuffer, 16000);
 ```
 
-### 3. Analyze Audio
-
-```typescript
-const result = await analyze(pcm16, {
-  dialogText: "Hello world", // Optional but recommended
-  sampleRate: 16000
-});
-```
-
-### 4. Use the Results
-
-```typescript
-// result.mouthCues is an array of timestamped mouth shapes
-result.mouthCues.forEach(cue => {
-  console.log(`${cue.start}s - ${cue.end}s: ${cue.value}`);
-});
-
-// Example output:
-// 0.00s - 0.35s: X    (idle, before speech)
-// 0.35s - 0.50s: D    (mouth wide open)
-// 0.50s - 0.85s: B    (clenched teeth, most consonants)
-// ...
-```
-
-## Complete Example
+### 2. Analyze Audio
 
 ```typescript
 import { analyze, recordAudio } from 'lip-sync-engine';
 
-async function analyzeSpeech() {
-  try {
-    // 1. Record audio
-    console.log('Recording...');
-    const { pcm16 } = await recordAudio(5000);
+const { pcm16 } = await recordAudio(5000);
 
-    // 2. Analyze
-    console.log('Analyzing...');
-    const result = await analyze(pcm16, {
-      dialogText: "Hello, this is a test of lip sync",
-      sampleRate: 16000
-    });
+const result = await analyze(pcm16, {
+  dialogText: 'Hello world', // optional: the words being spoken
+  sampleRate: 16000          // must match the sample rate of pcm16
+});
 
-    // 3. Use results
-    console.log(`Found ${result.mouthCues.length} mouth cues`);
-    result.mouthCues.forEach(cue => {
-      console.log(`${cue.start.toFixed(2)}s: ${cue.value}`);
-    });
-
-  } catch (error) {
-    console.error('Error:', error);
-  }
+for (const cue of result.mouthCues) {
+  console.log(`${cue.start.toFixed(2)}-${cue.end.toFixed(2)} s: ${cue.value}`);
 }
 
-analyzeSpeech();
+// Example output:
+// 0.00-0.35 s: X  (Idle, before speech)
+// 0.35-0.50 s: D  (Wide open)
+// 0.50-0.85 s: B  (Clenched teeth)
+// ...
 ```
 
+`analyze()` loads the WASM files on first use, so calling `init()` first is optional.
+
+### 3. Read the Results
+
+`result.mouthCues` is an array of timed mouth shapes. Each cue has a `start` and `end` time in
+seconds and a `value`, which is one of nine shapes: `A` Closed (M, B, P), `B` Clenched teeth, `C`
+Open, `D` Wide open, `E` Rounded, `F` Puckered, `G` F/V (upper teeth on lower lip), `H` L (tongue
+raised), and `X` Idle. Pass `extendedShapes: ''` to get only A-F. See [Mouth Shapes](../README.md#mouth-shapes) for images of
+each shape.
+
+### 4. Analyze Without Blocking the UI
+
+`analyze()` blocks the page while it runs. In interactive pages, use `analyzeAsync()`, which runs
+the same analysis in a Web Worker (see [Why Use Workers?](./worker-usage.md#why-use-workers)):
+
+```typescript
+import { analyzeAsync, recordAudio } from 'lip-sync-engine';
+
+const { pcm16 } = await recordAudio(5000);
+const result = await analyzeAsync(pcm16, { dialogText: 'Hello world' });
+```
+
+`analyzeAsync()` starts a shared `WorkerPool` with one worker on first use. To analyze several
+buffers in parallel, or to stream live audio, use `WorkerPool` directly. See the
+[Web Worker Usage Guide](./worker-usage.md) and the [Streaming Analysis Guide](./streaming-analysis.md).
+
 ## Framework Integration
+
+`LipSyncEngine.getInstance()` returns one engine shared by the whole app. Start loading it when a
+component mounts (`init()` is safe to call more than once), and do not destroy it when a component
+unmounts. See [Clean Up Resources](#4-clean-up-resources).
 
 ### React
 
 ```tsx
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { LipSyncEngine, recordAudio } from 'lip-sync-engine';
+import type { LipSyncEngineResult } from 'lip-sync-engine';
 
-function LipSyncEngineDemo() {
-  const [result, setResult] = useState(null);
+const engine = LipSyncEngine.getInstance();
+
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+export function LipSyncDemo() {
+  const [result, setResult] = useState<LipSyncEngineResult | null>(null);
   const [isRecording, setIsRecording] = useState(false);
-  const lipSyncEngineRef = useRef(LipSyncEngine.getInstance());
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    lipSyncEngineRef.current.init();
-    return () => lipSyncEngineRef.current.destroy();
+    // Start loading the WASM files early
+    engine.init().catch((err: unknown) => setError(errorMessage(err)));
   }, []);
 
   const handleRecord = async () => {
     setIsRecording(true);
+    setError(null);
     try {
       const { pcm16 } = await recordAudio(5000);
-      const res = await lipSyncEngineRef.current.analyze(pcm16, {
-        dialogText: "Hello world"
-      });
-      setResult(res);
+      setResult(await engine.analyze(pcm16, { dialogText: 'Hello world' }));
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setIsRecording(false);
     }
@@ -141,35 +153,46 @@ function LipSyncEngineDemo() {
       <button onClick={handleRecord} disabled={isRecording}>
         {isRecording ? 'Recording...' : 'Record'}
       </button>
+      {error && <div>{error}</div>}
       {result && <div>Found {result.mouthCues.length} cues</div>}
     </div>
   );
 }
 ```
 
-See [examples/react](../examples/react) for complete examples.
+See [examples/react](../examples/react) for a complete example.
 
 ### Vue
 
 ```vue
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue';
+import { onMounted, ref } from 'vue';
 import { LipSyncEngine, recordAudio } from 'lip-sync-engine';
+import type { LipSyncEngineResult } from 'lip-sync-engine';
 
-const result = ref(null);
+const engine = LipSyncEngine.getInstance();
+
+const result = ref<LipSyncEngineResult | null>(null);
 const isRecording = ref(false);
-const lipSyncEngine = LipSyncEngine.getInstance();
+const error = ref<string | null>(null);
 
-onMounted(() => lipSyncEngine.init());
-onUnmounted(() => lipSyncEngine.destroy());
+const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+onMounted(() => {
+  // Start loading the WASM files early
+  engine.init().catch((err: unknown) => {
+    error.value = errorMessage(err);
+  });
+});
 
 const handleRecord = async () => {
   isRecording.value = true;
+  error.value = null;
   try {
     const { pcm16 } = await recordAudio(5000);
-    result.value = await lipSyncEngine.analyze(pcm16, {
-      dialogText: "Hello world"
-    });
+    result.value = await engine.analyze(pcm16, { dialogText: 'Hello world' });
+  } catch (err) {
+    error.value = errorMessage(err);
   } finally {
     isRecording.value = false;
   }
@@ -181,153 +204,224 @@ const handleRecord = async () => {
     <button @click="handleRecord" :disabled="isRecording">
       {{ isRecording ? 'Recording...' : 'Record' }}
     </button>
+    <div v-if="error">{{ error }}</div>
     <div v-if="result">Found {{ result.mouthCues.length }} cues</div>
   </div>
 </template>
 ```
 
-See [examples/vue](../examples/vue) for complete examples.
+See [examples/vue](../examples/vue) for a complete example.
 
 ### Svelte
 
 ```svelte
-<script>
-import { writable } from 'svelte/store';
-import { LipSyncEngine, recordAudio } from 'lip-sync-engine';
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { LipSyncEngine, recordAudio } from 'lip-sync-engine';
+  import type { LipSyncEngineResult } from 'lip-sync-engine';
 
-const result = writable(null);
-const isRecording = writable(false);
-const lipSyncEngine = LipSyncEngine.getInstance();
-lipSyncEngine.init();
+  const engine = LipSyncEngine.getInstance();
 
-async function handleRecord() {
-  isRecording.set(true);
-  try {
-    const { pcm16 } = await recordAudio(5000);
-    const res = await lipSyncEngine.analyze(pcm16, {
-      dialogText: "Hello world"
+  let result: LipSyncEngineResult | null = null;
+  let isRecording = false;
+  let error: string | null = null;
+
+  const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+  // onMount runs only in the browser, so this is safe with server-side rendering
+  onMount(() => {
+    engine.init().catch((err: unknown) => {
+      error = errorMessage(err);
     });
-    result.set(res);
-  } finally {
-    isRecording.set(false);
+  });
+
+  async function handleRecord() {
+    isRecording = true;
+    error = null;
+    try {
+      const { pcm16 } = await recordAudio(5000);
+      result = await engine.analyze(pcm16, { dialogText: 'Hello world' });
+    } catch (err) {
+      error = errorMessage(err);
+    } finally {
+      isRecording = false;
+    }
   }
-}
 </script>
 
-<button on:click={handleRecord} disabled={$isRecording}>
-  {$isRecording ? 'Recording...' : 'Record'}
+<button on:click={handleRecord} disabled={isRecording}>
+  {isRecording ? 'Recording...' : 'Record'}
 </button>
-{#if $result}
-  <div>Found {$result.mouthCues.length} cues</div>
+{#if error}
+  <div>{error}</div>
+{/if}
+{#if result}
+  <div>Found {result.mouthCues.length} cues</div>
 {/if}
 ```
 
-See [examples/svelte](../examples/svelte) for complete examples.
+See [examples/svelte](../examples/svelte) for a complete example.
 
 ## Best Practices
 
-### 1. Always Provide Dialog Text
+### 1. Provide Dialog Text When You Know It
 
-Dialog text significantly improves accuracy:
+If you know the words being spoken, pass them as `dialogText`. Recognition is more accurate with it:
 
 ```typescript
-// ✅ Good - with dialog text
-const result = await analyze(pcm16, {
-  dialogText: "The actual words being spoken"
+import { analyze, loadAudio } from 'lip-sync-engine';
+
+const { pcm16 } = await loadAudio('speech.mp3');
+
+// Recommended: with dialog text
+const withText = await analyze(pcm16, {
+  dialogText: 'The actual words being spoken'
 });
 
-// ❌ Less accurate - without dialog text
-const result = await analyze(pcm16);
+// Less accurate: without dialog text
+const withoutText = await analyze(pcm16);
 ```
 
-### 2. Use 16kHz Sample Rate
+### 2. Pass the Buffer's Real Sample Rate
 
-PocketSphinx is optimized for 16kHz:
+Set `sampleRate` to the rate of the buffer you pass (default 16000). Higher rates are converted down
+to 16 kHz internally. Rates below 16 kHz are not supported: the analysis fails with an
+`Analysis error: ...` message. `recordAudio()` and `loadAudio()` return 16 kHz audio by default.
 
 ```typescript
-// ✅ Recommended
-const { pcm16 } = await recordAudio(5000, 16000);
+import { analyze, recordAudio } from 'lip-sync-engine';
 
-// ⚠️ Works only if you also pass sampleRate: 44100 to analyze(), and may be less accurate
-const { pcm16 } = await recordAudio(5000, 44100);
+// Default: 16 kHz audio and the default sampleRate
+const { pcm16 } = await recordAudio(5000);
+const result16k = await analyze(pcm16);
+
+// Another rate: pass the same rate to analyze()
+const recording44k = await recordAudio(5000, 44100);
+const result44k = await analyze(recording44k.pcm16, { sampleRate: 44100 });
 ```
 
 ### 3. Handle Errors
 
-Always wrap in try-catch:
+`loadAudio()` and `analyze()` reject if the audio cannot be decoded, the WASM files fail to load,
+or the input is invalid. `catch` receives an `unknown` value, so check its type before reading
+`message`:
 
 ```typescript
+import { analyze, loadAudio } from 'lip-sync-engine';
+
 try {
+  const { pcm16 } = await loadAudio('speech.mp3');
   const result = await analyze(pcm16);
-  // Use result...
+  console.log(result.mouthCues);
 } catch (error) {
-  console.error('Analysis failed:', error.message);
-  // Show error to user...
+  const message = error instanceof Error ? error.message : String(error);
+  console.error('Analysis failed:', message);
 }
 ```
 
 ### 4. Clean Up Resources
 
-When done with the library:
+Initialize the engine once and keep it for the life of the app. Call `destroy()` only when the app
+is done with lip sync, not when a component unmounts:
 
 ```typescript
-const lipSyncEngine = LipSyncEngine.getInstance();
-// Use it...
-lipSyncEngine.destroy(); // Resets the instance. The loaded WASM module stays cached for reuse; also call WasmLoader.reset() to let it be garbage-collected
+import { LipSyncEngine, WasmLoader } from 'lip-sync-engine';
+
+// On app teardown
+LipSyncEngine.getInstance().destroy(); // resets the shared instance
+WasmLoader.reset();                    // optional: lets the cached WASM module be garbage-collected
 ```
 
-## Common Issues
+Without `WasmLoader.reset()`, the WASM module stays cached and a later `init()` is fast. For
+`WorkerPool`, see
+[Pool Lifecycle and Sizing](./worker-usage.md#pool-lifecycle-and-sizing).
 
-### WASM Not Loading
+## Self-Hosting the WASM Files
 
-**Problem:** WASM files not found
+By default the library loads three WASM files, and the worker script for `WorkerPool`, from
+`https://unpkg.com/lip-sync-engine@<version>/dist/`, where `<version>` is the installed version.
+Host them yourself when the page cannot reach unpkg.com: for example, when a Content Security Policy
+blocks it, or when the app must work offline or on an internal network.
 
-**Solution:** The library automatically loads WASM files from unpkg CDN by default (no configuration needed). If you need to self-host the WASM files, you can specify custom paths:
+1. Copy the files from the installed package to a folder your server publishes:
 
-```javascript
-import { LipSyncEngine } from 'lip-sync-engine';
+   ```bash
+   mkdir -p public/lip-sync-engine
+   cp node_modules/lip-sync-engine/dist/wasm/* node_modules/lip-sync-engine/dist/worker.js public/lip-sync-engine/
+   ```
 
-const engine = LipSyncEngine.getInstance();
-await engine.init({
-  wasmPath: '/custom/path/lip-sync-engine.wasm',
-  dataPath: '/custom/path/lip-sync-engine.data',
-  jsPath: '/custom/path/lip-sync-engine.js'
+   `dist/wasm/` contains `lip-sync-engine.js`, `lip-sync-engine.wasm`, and `lip-sync-engine.data`.
+   Copy the files again whenever you upgrade the package.
+
+2. Pass the paths to `LipSyncEngine.init()` before any `analyze()` call. `analyze()` loads the
+   default CDN paths if the engine is not initialized yet, and options passed after the first load
+   are ignored.
+
+3. If you use `WorkerPool` or `analyzeAsync()`, pass the same paths plus `workerScriptUrl` to
+   `WorkerPool.init()` before the first analysis.
+
+```typescript
+import { LipSyncEngine, WorkerPool } from 'lip-sync-engine';
+
+const assets = {
+  wasmPath: '/lip-sync-engine/lip-sync-engine.wasm',
+  dataPath: '/lip-sync-engine/lip-sync-engine.data',
+  jsPath: '/lip-sync-engine/lip-sync-engine.js'
+};
+
+// Main thread
+await LipSyncEngine.getInstance().init(assets);
+
+// Web Workers
+await WorkerPool.getInstance(2).init({
+  ...assets,
+  workerScriptUrl: '/lip-sync-engine/worker.js'
 });
 ```
 
-By default (with no options), the library loads the files for its own installed version, for example:
-- `https://unpkg.com/lip-sync-engine@2.0.0/dist/wasm/lip-sync-engine.wasm`
-- `https://unpkg.com/lip-sync-engine@2.0.0/dist/wasm/lip-sync-engine.data`
-- `https://unpkg.com/lip-sync-engine@2.0.0/dist/wasm/lip-sync-engine.js`
+Use root-relative paths (starting with `/`) or full URLs. If the files are on another origin, that
+server must send CORS headers (`Access-Control-Allow-Origin`) for them. If `LipSyncEngine` fails to
+load the files, the failure is cached for the page: fix the paths, then reload the page to retry. A
+failed `WorkerPool.init()` is not cached: fix the paths and call `init()` again.
 
-### Microphone Permission Denied
+## Common Issues
 
-**Problem:** `recordAudio()` fails
+### Microphone Access Fails
 
-**Solution:** User must grant microphone permission:
+`recordAudio()` rejects when the browser cannot open the microphone. It needs a secure page (HTTPS
+or `localhost`) and an available microphone, and the user must allow access:
 
 ```typescript
+import { recordAudio } from 'lip-sync-engine';
+
 try {
   const { pcm16 } = await recordAudio(5000);
+  console.log(pcm16.length);
 } catch (error) {
-  if (error.name === 'NotAllowedError') {
-    alert('Please allow microphone access');
+  if (error instanceof DOMException && error.name === 'NotAllowedError') {
+    alert('Please allow microphone access.');
+  } else if (error instanceof DOMException && error.name === 'NotFoundError') {
+    alert('No microphone was found.');
+  } else {
+    throw error;
   }
 }
 ```
 
 ### Poor Recognition Accuracy
 
-**Problem:** Mouth shapes don't match speech
+If the mouth shapes do not match the speech:
 
-**Solutions:**
-1. Always provide dialog text
-2. Use 16kHz sample rate
-3. Ensure clear audio (no background noise)
-4. Speak clearly at normal pace
+1. Provide `dialogText` when you know the words.
+2. Make sure `sampleRate` matches the audio buffer.
+3. Use clear audio with little background noise.
+4. For streamed audio, analyze chunks with context and lookahead. See
+   [Context and Lookahead](./streaming-analysis.md#context-and-lookahead).
 
 ## Next Steps
 
-- Read the [API Reference](./api-reference.md) for complete API documentation
-- Check out [Framework Examples](../examples/) for integration patterns
-- See the [main README](../README.md) for more features
+- [API Reference](./api-reference.md): every class, option, and error
+- [Web Worker Usage Guide](./worker-usage.md): non-blocking and parallel analysis with `WorkerPool`
+- [Streaming Analysis Guide](./streaming-analysis.md): lip sync for live or streamed audio
+- [Examples](../examples/): vanilla JavaScript, React, Vue, and Svelte apps
+- [Mouth Shapes](../README.md#mouth-shapes): images of each shape

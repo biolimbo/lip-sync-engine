@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { LipSyncEngine, WorkerPool } from 'lip-sync-engine';
+import { LipSyncEngine, WorkerPool, WorkerPoolDestroyedError } from 'lip-sync-engine';
 import type { LipSyncEngineResult, LipSyncEngineOptions, MouthCue } from 'lip-sync-engine';
 
 export type ExecutionMode = 'single' | 'worker' | 'chunked' | 'streaming';
@@ -11,58 +11,50 @@ export interface PerformanceMetrics {
   chunksProcessed?: number;
 }
 
-// The engine and the worker pool are created once and shared by the whole app.
-// Since 2.0.0 each worker keeps its speech decoder between calls, so keep the
-// pool alive between analyses: destroying and re-creating it would pay the
-// start-up cost again every time. Call WorkerPool.getInstance().destroy() only
-// when the app no longer needs lip sync.
-//
-// No init options are passed, so the WASM files and the worker script load
-// from unpkg at the installed package version. To self-host them, pass
-// wasmPath, dataPath, jsPath (and workerScriptUrl for the pool) to init().
+export interface AnalysisOutcome {
+  result: LipSyncEngineResult;
+  metrics: PerformanceMetrics;
+}
 
-// Each worker holds its own copy of the models, so cap the pool size.
+// The engine and the worker pool are app-wide singletons. They stay alive
+// across mode changes and unmounts so no analysis pays the startup cost again.
+// No init options are passed, so the WASM files and the worker script load
+// from unpkg at the installed package version.
+
+// Each worker holds its own copy of the model, so cap the pool size.
 const MAX_WORKERS = Math.min(navigator.hardwareConcurrency || 4, 4);
 
-let enginePromise: Promise<LipSyncEngine> | null = null;
-let poolPromise: Promise<WorkerPool> | null = null;
-let warmPoolPromise: Promise<WorkerPool> | null = null;
-
-function getEngine(): Promise<LipSyncEngine> {
-  if (!enginePromise) {
-    const engine = LipSyncEngine.getInstance();
-    enginePromise = engine.init().then(() => engine);
-    enginePromise.catch(() => { enginePromise = null; }); // allow a retry
+/** Start what the mode needs. Repeated calls share the library's in-flight startup. */
+async function prepare(mode: ExecutionMode): Promise<void> {
+  if (mode === 'single') {
+    await LipSyncEngine.getInstance().init();
+    return;
   }
-  return enginePromise;
+  const pool = WorkerPool.getInstance(MAX_WORKERS);
+  await pool.init();
+  // Streaming also starts every worker: it shares this pool with chunked mode.
+  if (mode === 'chunked' || mode === 'streaming') await pool.warmup();
 }
 
-/** Pool with one worker (what init() starts) */
-function getPool(): Promise<WorkerPool> {
-  if (!poolPromise) {
-    const pool = WorkerPool.getInstance(MAX_WORKERS);
-    poolPromise = pool.init().then(() => pool);
-    poolPromise.catch(() => { poolPromise = null; });
-  }
-  return poolPromise;
+function toError(err: unknown): Error {
+  return err instanceof Error ? err : new Error(String(err));
 }
 
-/** Pool with all workers started, for modes that analyse chunks in parallel */
-function getWarmPool(): Promise<WorkerPool> {
-  if (!warmPoolPromise) {
-    warmPoolPromise = getPool().then(async (pool) => {
-      await pool.warmup();
-      return pool;
-    });
-    warmPoolPromise.catch(() => { warmPoolPromise = null; });
-  }
-  return warmPoolPromise;
+/** Resolve after the browser paints, so a status set just before shows up */
+function nextPaint(): Promise<void> {
+  // requestAnimationFrame runs just before the next paint, and the timeout runs after it
+  return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
 }
 
-function prepare(mode: ExecutionMode): Promise<unknown> {
-  if (mode === 'single') return getEngine();
-  if (mode === 'worker') return getPool();
-  return getWarmPool();
+/**
+ * Thrown by analyze() when the selected mode fails to start. The failure is
+ * also reported as `initError`, so callers need not show it again.
+ */
+export class StartupError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StartupError';
+  }
 }
 
 function splitIntoChunks(pcm16: Int16Array, chunkSeconds: number, sampleRate: number): Int16Array[] {
@@ -87,35 +79,7 @@ function mergeChunkResults(results: LipSyncEngineResult[], chunks: Int16Array[],
   return { mouthCues };
 }
 
-/**
- * Example React hook for lip-sync-engine with all execution modes.
- * This is not part of the package; it shows one way to integrate it.
- *
- * @example
- * ```tsx
- * function MyComponent() {
- *   const { analyze, result, isAnalyzing, mode, setMode } = useLipSyncEngine();
- *
- *   const handleAnalyze = async () => {
- *     const { pcm16 } = await recordAudio(5000);
- *     await analyze(pcm16, { dialogText: 'Hello world', sampleRate: 16000 });
- *   };
- *
- *   return (
- *     <div>
- *       <button onClick={() => setMode('single')}>Single Thread</button>
- *       <button onClick={() => setMode('worker')}>Web Worker</button>
- *       <button onClick={() => setMode('chunked')}>Chunked Workers</button>
- *       <button onClick={() => setMode('streaming')}>Streaming</button>
- *       <button onClick={handleAnalyze} disabled={isAnalyzing}>
- *         Analyze
- *       </button>
- *       {result && <div>{result.mouthCues.length} cues found</div>}
- *     </div>
- *   );
- * }
- * ```
- */
+/** React hook that runs lip-sync-engine in one of four execution modes and tracks the result. */
 export function useLipSyncEngine() {
   const [mode, setMode] = useState<ExecutionMode>('single');
   const [result, setResult] = useState<LipSyncEngineResult | null>(null);
@@ -124,103 +88,111 @@ export function useLipSyncEngine() {
   const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
   const [chunkSize, setChunkSize] = useState(5); // seconds
   const [recordingDuration, setRecordingDuration] = useState(10); // seconds
-  const [isInitialized, setIsInitialized] = useState(false);
+  // Startup state belongs to a mode, so switching modes never shows the
+  // previous mode's state.
+  const [readyMode, setReadyMode] = useState<ExecutionMode | null>(null);
+  const [initFailure, setInitFailure] = useState<{ mode: ExecutionMode; error: Error } | null>(null);
+  const isInitialized = readyMode === mode;
+  const initError = initFailure?.mode === mode ? initFailure.error : null;
 
   // Start what the selected mode needs. Nothing is torn down when the mode
-  // changes or the component unmounts: the engine and pool are app-wide.
+  // changes or the component unmounts. A worker pool that failed to start
+  // tries again here, so switching back to a failed worker mode retries it.
   useEffect(() => {
     let current = true;
-    setIsInitialized(false);
+    setInitFailure(null);
     prepare(mode).then(
-      () => { if (current) setIsInitialized(true); },
-      (err) => { if (current) setError(err instanceof Error ? err : new Error(String(err))); }
+      () => { if (current) setReadyMode(mode); },
+      (err) => {
+        if (!current || err instanceof WorkerPoolDestroyedError) return;
+        setInitFailure({ mode, error: toError(err) });
+      }
     );
     return () => { current = false; };
   }, [mode]);
 
   const analyze = useCallback(
-    async (pcm16: Int16Array, options: LipSyncEngineOptions = {}) => {
+    async (pcm16: Int16Array, options: LipSyncEngineOptions = {}): Promise<AnalysisOutcome> => {
       setIsAnalyzing(true);
       setError(null);
       setMetrics(null);
 
       try {
         const sampleRate = options.sampleRate ?? 16000;
-        await prepare(mode);
-        const startTime = performance.now();
+        try {
+          await prepare(mode);
+        } catch (err) {
+          const e = toError(err);
+          if (!(err instanceof WorkerPoolDestroyedError)) setInitFailure({ mode, error: e });
+          throw new StartupError(e.message);
+        }
+        setReadyMode(mode);
+        setInitFailure(null);
 
         let analysisResult: LipSyncEngineResult;
-        let performanceMetrics: PerformanceMetrics;
+        let workersUsed: number | undefined;
+        let chunksProcessed: number | undefined;
+
+        let startTime = performance.now();
 
         if (mode === 'single') {
-          // Runs on the main thread and blocks the UI
-          const engine = await getEngine();
-          analysisResult = await engine.analyze(pcm16, options);
-          performanceMetrics = {
-            executionTime: performance.now() - startTime,
-            cuesCount: analysisResult.mouthCues.length
-          };
+          // Runs on the main thread and blocks the UI, so paint the
+          // "Analyzing" status first
+          await nextPaint();
+          startTime = performance.now();
+          analysisResult = await LipSyncEngine.getInstance().analyze(pcm16, options);
 
         } else if (mode === 'worker') {
           // Runs in a Web Worker; the UI stays responsive
-          const pool = await getPool();
-          analysisResult = await pool.analyze(pcm16, options);
-          performanceMetrics = {
-            executionTime: performance.now() - startTime,
-            cuesCount: analysisResult.mouthCues.length,
-            workersUsed: 1
-          };
+          analysisResult = await WorkerPool.getInstance(MAX_WORKERS).analyze(pcm16, options);
+          workersUsed = 1;
 
         } else if (mode === 'chunked') {
-          // Splits the audio and analyses the chunks in parallel. Each chunk is
-          // analysed on its own, so cues near chunk edges are less accurate.
-          // Fine for long chunks; streaming mode adds context for short ones.
-          const pool = await getWarmPool();
+          // Analyzes the chunks in parallel. Each chunk is analyzed on its own,
+          // so cues near chunk edges are less accurate.
+          const pool = WorkerPool.getInstance(MAX_WORKERS);
           const chunks = splitIntoChunks(pcm16, chunkSize, sampleRate);
           const results = await pool.analyzeChunks(chunks, options);
           analysisResult = mergeChunkResults(results, chunks, sampleRate);
-          performanceMetrics = {
-            executionTime: performance.now() - startTime,
-            cuesCount: analysisResult.mouthCues.length,
-            workersUsed: Math.min(chunks.length, pool.getStats().totalWorkers),
-            chunksProcessed: chunks.length
-          };
+          workersUsed = Math.min(chunks.length, pool.getStats().totalWorkers);
+          chunksProcessed = chunks.length;
 
         } else {
-          // Streaming: recommended 2.0.0 setup. Each chunk is analysed with
-          // 500 ms of audio before and after it and only its own cues are
-          // returned (times relative to the chunk). Short chunks analysed
-          // alone lose most of their mouth shapes.
-          const pool = await getWarmPool();
-          const stream = pool.createStreamAnalyzer({
+          // Chunks are analyzed with up to 500 ms of audio before and after
+          // them, and only each chunk's own cues are returned (times relative
+          // to the chunk).
+          const stream = WorkerPool.getInstance(MAX_WORKERS).createStreamAnalyzer({
             ...options,
             sampleRate,
             contextMs: 500,
             lookaheadMs: 500
           });
 
-          // A live source would call addChunk() as audio arrives. This demo
+          // A live source would call addChunk() as audio arrives. This example
           // splits the finished recording to simulate that.
           const chunks = splitIntoChunks(pcm16, chunkSize, sampleRate);
           const indexes = chunks.map((chunk) => stream.addChunk(chunk));
-          stream.end(); // the utterance is complete
+          stream.end();
 
-          // Each chunk's cues can be used (for example played) as soon as its
-          // getResult() resolves; this demo waits for all of them.
+          // Each chunk's cues are usable as soon as its getResult() resolves;
+          // this example waits for all of them.
           const results = await Promise.all(indexes.map((i) => stream.getResult(i)));
           analysisResult = mergeChunkResults(results, chunks, sampleRate);
-          performanceMetrics = {
-            executionTime: performance.now() - startTime,
-            cuesCount: analysisResult.mouthCues.length,
-            chunksProcessed: chunks.length
-          };
+          chunksProcessed = chunks.length;
         }
 
+        const performanceMetrics: PerformanceMetrics = {
+          executionTime: performance.now() - startTime,
+          cuesCount: analysisResult.mouthCues.length,
+          workersUsed,
+          chunksProcessed
+        };
         setResult(analysisResult);
         setMetrics(performanceMetrics);
+        return { result: analysisResult, metrics: performanceMetrics };
       } catch (err) {
-        const e = err instanceof Error ? err : new Error(String(err));
-        setError(e);
+        const e = toError(err);
+        if (!(e instanceof StartupError)) setError(e);
         throw e;
       } finally {
         setIsAnalyzing(false);
@@ -241,6 +213,7 @@ export function useLipSyncEngine() {
     result,
     isAnalyzing,
     isInitialized,
+    initError,
     error,
     metrics,
     reset,

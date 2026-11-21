@@ -1,7 +1,7 @@
 {
   "name": "lip-sync-engine",
   "version": "2.0.0",
-  "description": "🎙️ WebAssembly port of Rhubarb Lip Sync for browser-based lip-sync animation. Analyzes audio to generate precise mouth movements using PocketSphinx speech recognition. Framework-agnostic TypeScript API for React, Vue, Svelte, Next.js, and vanilla JS. Perfect for games, chatbots, and virtual characters.",
+  "description": "WebAssembly port of Rhubarb Lip Sync for the browser. Analyzes speech audio into timed mouth shapes using PocketSphinx speech recognition, with a TypeScript API, Web Worker pool and streaming analysis.",
   "author": "Santiago Forero",
   "license": "MIT",
   "keywords": [
@@ -39,6 +39,7 @@
   "files": [
     "dist",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {

@@ -1,13 +1,4 @@
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
 .app {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background: #0f0f0f;
-  color: #e0e0e0;
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -216,9 +207,11 @@ input[type="text"]:disabled {
   transition: background 0.2s, transform 0.1s;
   flex: 1;
   min-width: 140px;
+  margin: 0;
+  text-align: center;
 }
 
-.btn:hover:not(:disabled) {
+.btn:hover:not(:disabled):not(.disabled) {
   background: #3a8eef;
   transform: translateY(-1px);
 }
@@ -227,7 +220,8 @@ input[type="text"]:disabled {
   transform: translateY(0);
 }
 
-.btn:disabled {
+.btn:disabled,
+.btn.disabled {
   background: #2a2a2a;
   color: #666;
   cursor: not-allowed;
@@ -256,10 +250,10 @@ input[type="text"]:disabled {
   border-color: #2a3a4a;
 }
 
-.status.success {
-  background: #1a2a1a;
-  color: #51cf66;
-  border-color: #2a4a2a;
+.status.error {
+  background: #2a1a1a;
+  color: #ff6b6b;
+  border-color: #4a2a2a;
 }
 
 .viseme-display {
@@ -430,10 +424,6 @@ input[type="text"]:disabled {
 
 .log-entry.error {
   color: #ff6b6b;
-}
-
-.log-entry.warn {
-  color: #ffd43b;
 }
 
 .log-entry.success {

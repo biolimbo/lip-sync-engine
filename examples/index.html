@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LipSyncEngine.js - Live Examples</title>
-  <meta name="description" content="High-quality lip-sync animation from audio in the browser. Interactive examples for React, Vue, Svelte, and Vanilla JavaScript.">
+  <title>lip-sync-engine: Examples</title>
+  <meta name="description" content="Lip-sync animation from audio in the browser. Examples for React, Vue, Svelte, and vanilla JavaScript.">
   <style>
     * {
       margin: 0;
@@ -79,11 +79,6 @@
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
     }
 
-    .example-icon {
-      font-size: 3.5em;
-      margin-bottom: 10px;
-    }
-
     .example-name {
       font-size: 1.4em;
       font-weight: 600;
@@ -94,6 +89,26 @@
       font-size: 0.9em;
       opacity: 0.95;
       line-height: 1.4;
+    }
+
+    .example-run {
+      margin-top: 12px;
+      font-size: 0.8em;
+      opacity: 0.9;
+    }
+
+    .example-run code {
+      background: rgba(255, 255, 255, 0.2);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+
+    .examples-note {
+      color: #666;
+      font-size: 0.9em;
+      text-align: center;
+      margin-bottom: 30px;
     }
 
     .features {
@@ -190,69 +205,67 @@
 </head>
 <body>
   <div class="container">
-    <h1>🎤 LipSyncEngine.js</h1>
-    <p class="subtitle">Live Interactive Examples</p>
+    <h1>lip-sync-engine</h1>
+    <p class="subtitle">Examples</p>
 
     <p class="description">
-      High-quality lip-sync animation from audio in the browser using WebAssembly and PocketSphinx.
-      Choose your preferred framework to explore interactive examples with microphone recording,
-      file upload, and real-time viseme animation.
+      Lip-sync animation from audio in the browser, using WebAssembly and PocketSphinx.
+      Each example records or loads audio, analyzes it, and animates the mouth shapes
+      in sync with playback.
     </p>
 
     <div class="features">
-      <h2>✨ Features</h2>
+      <h2>What the Examples Show</h2>
       <div class="features-grid">
-        <div class="feature-item">Microphone recording (5-60s)</div>
-        <div class="feature-item">Audio file upload (MP3, WAV)</div>
-        <div class="feature-item">Main thread, worker, chunked and streaming modes</div>
-        <div class="feature-item">Real-time viseme animation</div>
-        <div class="feature-item">Performance metrics</div>
-        <div class="feature-item">Worker pool support</div>
-        <div class="feature-item">TypeScript support</div>
-        <div class="feature-item">Framework agnostic</div>
+        <div class="feature-item">Microphone recording (5 to 60 seconds)</div>
+        <div class="feature-item">Loading any audio file the browser can decode</div>
+        <div class="feature-item">Optional dialog text for better accuracy</div>
+        <div class="feature-item">Main thread, worker, and chunked modes</div>
+        <div class="feature-item">Streaming mode (React, Vue, and Svelte)</div>
+        <div class="feature-item">Mouth shapes animated in sync with playback</div>
+        <div class="feature-item">Execution time, cue count, and worker metrics</div>
+        <div class="feature-item">Timeline of all mouth cues</div>
       </div>
     </div>
 
     <div class="examples-grid">
-      <a href="./react/" class="example-card">
-        <div class="example-icon">⚛️</div>
+      <a href="https://github.com/biolimbo/lip-sync-engine/tree/main/examples/react" class="example-card" target="_blank" rel="noopener noreferrer">
         <div class="example-name">React</div>
         <div class="example-desc">React 18 + TypeScript + Vite</div>
+        <div class="example-run">Run with <code>npm install &amp;&amp; npm run dev</code></div>
       </a>
 
-      <a href="./vue/" class="example-card">
-        <div class="example-icon">💚</div>
+      <a href="https://github.com/biolimbo/lip-sync-engine/tree/main/examples/vue" class="example-card" target="_blank" rel="noopener noreferrer">
         <div class="example-name">Vue</div>
-        <div class="example-desc">Vue 3 + Composition API</div>
+        <div class="example-desc">Vue 3 + TypeScript + Vite</div>
+        <div class="example-run">Run with <code>npm install &amp;&amp; npm run dev</code></div>
       </a>
 
-      <a href="./svelte/" class="example-card">
-        <div class="example-icon">🧡</div>
+      <a href="https://github.com/biolimbo/lip-sync-engine/tree/main/examples/svelte" class="example-card" target="_blank" rel="noopener noreferrer">
         <div class="example-name">Svelte</div>
-        <div class="example-desc">Svelte 4 + TypeScript</div>
+        <div class="example-desc">Svelte 4 + TypeScript + Vite</div>
+        <div class="example-run">Run with <code>npm install &amp;&amp; npm run dev</code></div>
       </a>
 
       <a href="./vanilla/" class="example-card">
-        <div class="example-icon">🍦</div>
         <div class="example-name">Vanilla JS</div>
-        <div class="example-desc">Pure JavaScript + HTML</div>
+        <div class="example-desc">JavaScript + HTML, no build step</div>
+        <div class="example-run">Opens here</div>
       </a>
     </div>
 
+    <p class="examples-note">
+      The React, Vue, and Svelte examples are Vite projects: their cards open the
+      source and setup instructions on GitHub. The vanilla example runs on this page's server.
+    </p>
+
     <div class="footer">
       <p>
-        <strong>LipSyncEngine.js</strong> - Browser-based lip-sync animation powered by WebAssembly
+        <strong>lip-sync-engine</strong>: lip-sync animation in the browser, powered by WebAssembly
       </p>
       <div class="footer-links">
-        <a href="https://github.com/biolimbo/lip-sync-engine" target="_blank" rel="noopener noreferrer">
-          📦 GitHub Repository
-        </a>
-        <a href="https://www.npmjs.com/package/lip-sync-engine" target="_blank" rel="noopener noreferrer">
-          📥 NPM Package
-        </a>
-        <a href="https://github.com/biolimbo/lip-sync-engine#readme" target="_blank" rel="noopener noreferrer">
-          📖 Documentation
-        </a>
+        <a href="https://github.com/biolimbo/lip-sync-engine" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://www.npmjs.com/package/lip-sync-engine" target="_blank" rel="noopener noreferrer">npm</a>
       </div>
     </div>
   </div>

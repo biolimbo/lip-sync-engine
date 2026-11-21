@@ -1,15 +1,36 @@
 import { useState, useRef, useEffect } from 'react';
 import { recordAudio, loadAudio } from 'lip-sync-engine';
 import type { MouthCue } from 'lip-sync-engine';
-import { useLipSyncEngine } from './hooks/useLipSyncEngine';
+import { useLipSyncEngine, StartupError } from './hooks/useLipSyncEngine';
 import type { ExecutionMode } from './hooks/useLipSyncEngine';
 import './App.css';
 
 interface LogEntry {
   message: string;
-  type: 'info' | 'error' | 'warn' | 'success';
+  type: 'info' | 'error' | 'success';
   timestamp: string;
 }
+
+const SAMPLE_RATE = 16000;
+
+const SHAPE_NAMES: Record<string, string> = {
+  A: 'Closed (M, B, P)',
+  B: 'Clenched teeth',
+  C: 'Open',
+  D: 'Wide open',
+  E: 'Rounded',
+  F: 'Puckered',
+  G: 'F/V (upper teeth on lower lip)',
+  H: 'L (tongue raised)',
+  X: 'Idle',
+};
+
+const MODES: { id: ExecutionMode; title: string; description: string }[] = [
+  { id: 'single', title: 'Single Thread', description: 'Main thread (blocks the UI)' },
+  { id: 'worker', title: 'Web Worker', description: 'One worker (the UI stays responsive)' },
+  { id: 'chunked', title: 'Chunked', description: 'Splits audio across up to 4 workers' },
+  { id: 'streaming', title: 'Streaming', description: 'Chunks with 500 ms context and lookahead' },
+];
 
 function App() {
   const {
@@ -17,6 +38,7 @@ function App() {
     result,
     isAnalyzing,
     isInitialized,
+    initError,
     error,
     metrics,
     reset,
@@ -30,37 +52,26 @@ function App() {
 
   const [dialogText, setDialogText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // decoding an audio file
   const [currentViseme, setCurrentViseme] = useState('X');
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const lastStartupLogRef = useRef('');
   // One AudioContext for all playback, closed on unmount
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
 
-  const visemeNames: Record<string, string> = {
-    X: 'Closed/Rest',
-    A: 'Open',
-    B: 'Lips Together',
-    C: 'Rounded',
-    D: 'Tongue-Teeth',
-    E: 'Slightly Open',
-    F: 'F/V Sound',
-    G: 'Open Back',
-    H: 'Wide Open',
-  };
+  const busy = isAnalyzing || isRecording || isLoading;
+  // Recording and loading work while the mode starts (analyze() waits for it),
+  // but not after the mode failed to start
+  const canAnalyze = !busy && !initError;
+  const initFailureText = initError ? startupFailureMessage(initError, mode) : '';
 
   const addLog = (message: string, type: LogEntry['type'] = 'info') => {
-    const now = new Date();
-    const hours = now.getHours();
-    const minutes = now.getMinutes().toString().padStart(2, '0');
-    const seconds = now.getSeconds().toString().padStart(2, '0');
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    const displayHours = (hours % 12 || 12).toString();
-    const timestamp = `[${displayHours}:${minutes}:${seconds} ${ampm}]`;
-
+    const timestamp = `[${new Date().toLocaleTimeString()}]`;
     setLogs(prev => [...prev, { message, type, timestamp }]);
   };
 
@@ -68,11 +79,18 @@ function App() {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
-  // Log when the selected mode starts and finishes initializing
+  // Log each startup step once. StrictMode runs effects twice in development,
+  // so skip a message identical to the previous one.
   useEffect(() => {
-    if (isInitialized) addLog(`✅ ${modeLabel(mode)} ready`, 'success');
-    else addLog(`Initializing ${modeLabel(mode)}...`, 'info');
-  }, [isInitialized]);
+    const message = initError
+      ? `Failed to initialize ${modeLabel(mode)}: ${initFailureText}`
+      : isInitialized
+        ? `Ready (${modeLabel(mode)})`
+        : `Initializing (${modeLabel(mode)})...`;
+    if (message === lastStartupLogRef.current) return;
+    lastStartupLogRef.current = message;
+    addLog(message, initError ? 'error' : isInitialized ? 'success' : 'info');
+  }, [mode, isInitialized, initError]);
 
   const stopPlayback = () => {
     if (animationFrameRef.current !== null) {
@@ -139,74 +157,66 @@ function App() {
     };
   };
 
-  const handleRecord = async () => {
-    setIsRecording(true);
+  // Clear the previous result and playback before new audio arrives
+  const startOver = () => {
+    stopPlayback();
     reset();
     setAudioBuffer(null);
+  };
+
+  const runAnalysis = async (pcm16: Int16Array, buffer: AudioBuffer) => {
+    setAudioBuffer(buffer);
+    const text = dialogText.trim();
+    addLog(text ? `Analyzing with dialog text "${text}"...` : 'Analyzing...');
     try {
-      addLog('=== Starting Recording ===', 'info');
-      addLog(`Recording ${recordingDuration} seconds (allow microphone access if asked)...`, 'info');
-
-      const { pcm16, audioBuffer: buffer } = await recordAudio(recordingDuration * 1000);
-
-      addLog('Recording stopped', 'info');
-      const duration = (pcm16.length / 16000).toFixed(2);
-      addLog(`✅ Captured ${pcm16.length} samples (${duration}s)`, 'success');
-
-      setAudioBuffer(buffer);
-
-      addLog('=== Starting Analysis ===', 'info');
-
-      addLog(`Mode: ${modeLabel(mode)}`, 'info');
-      addLog(`Analyzing ${pcm16.length} samples (${duration}s at 16kHz)${dialogText ? ' with dialog text' : ''}`, 'info');
-
-      await analyze(pcm16, {
-        dialogText: dialogText.trim() || undefined,
-        sampleRate: 16000,
+      const { metrics: m } = await analyze(pcm16, {
+        dialogText: text || undefined,
+        sampleRate: SAMPLE_RATE,
       });
-
-      addLog(`✅ Analysis complete!`, 'success');
+      addLog(`Analyzed in ${Math.round(m.executionTime)} ms: ${m.cuesCount} cues (${modeLabel(mode)})`, 'success');
     } catch (err) {
-      console.error('Recording failed:', err);
-      addLog(`Error: ${err instanceof Error ? err.message : 'Recording failed'}`, 'error');
-    } finally {
-      setIsRecording(false);
+      // A startup failure is already logged and shown as initError
+      if (!(err instanceof StartupError)) addLog(`Analysis failed: ${errorMessage(err)}`, 'error');
     }
   };
 
+  const handleRecord = async () => {
+    startOver();
+    setIsRecording(true);
+    let recording: Awaited<ReturnType<typeof recordAudio>>;
+    try {
+      addLog(`Recording ${recordingDuration} s (allow microphone access if asked)...`);
+      recording = await recordAudio(recordingDuration * 1000);
+    } catch (err) {
+      addLog(`Recording failed: ${errorMessage(err)}`, 'error');
+      return;
+    } finally {
+      setIsRecording(false);
+    }
+    addLog(`Recorded ${seconds(recording.pcm16)} s`);
+    await runAnalysis(recording.pcm16, recording.audioBuffer);
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const input = e.target;
+    const file = input.files?.[0];
+    input.value = ''; // allow loading the same file again
     if (!file) return;
 
-    reset();
-    setAudioBuffer(null);
+    startOver();
+    setIsLoading(true);
+    let audio: Awaited<ReturnType<typeof loadAudio>>;
     try {
-      addLog('=== Loading Audio File ===', 'info');
-      addLog(`File: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`, 'info');
-
-      const { pcm16, audioBuffer: buffer } = await loadAudio(file);
-
-      const duration = (pcm16.length / 16000).toFixed(2);
-      addLog(`✅ Decoded: ${pcm16.length} samples (${duration}s at 16kHz)`, 'success');
-
-      setAudioBuffer(buffer);
-
-      addLog('=== Starting Analysis ===', 'info');
-
-      addLog(`Mode: ${modeLabel(mode)}`, 'info');
-      addLog(`Analyzing ${pcm16.length} samples (${duration}s at 16kHz)${dialogText ? ' with dialog text' : ''}`, 'info');
-
-      await analyze(pcm16, {
-        dialogText: dialogText.trim() || undefined,
-        sampleRate: 16000,
-      });
-
-      addLog(`✅ Analysis complete!`, 'success');
+      addLog(`Loading ${file.name}...`);
+      audio = await loadAudio(file);
     } catch (err) {
-      console.error('File load failed:', err);
-      addLog(`Error: ${err instanceof Error ? err.message : 'File load failed'}`, 'error');
+      addLog(`Could not load ${file.name}: ${errorMessage(err)}`, 'error');
+      return;
+    } finally {
+      setIsLoading(false);
     }
-    e.target.value = '';
+    addLog(`Loaded ${file.name} (${seconds(audio.pcm16)} s)`);
+    await runAnalysis(audio.pcm16, audio.audioBuffer);
   };
 
   const handlePlay = () => {
@@ -222,61 +232,44 @@ function App() {
     }
   }, [result]);
 
-  const handleModeChange = (newMode: ExecutionMode) => {
-    if (newMode === mode) return;
-    setMode(newMode);
-    addLog(`Execution mode changed to: ${modeLabel(newMode)}`, 'info');
-  };
+  const statusClass = isRecording ? 'recording'
+    : isAnalyzing || isLoading ? 'analyzing'
+    : initError ? 'error'
+    : !isInitialized ? 'analyzing'
+    : '';
+  const statusText = isRecording ? 'Recording. Speak now.'
+    : isAnalyzing ? 'Analyzing audio...'
+    : isLoading ? 'Loading audio file...'
+    : initError ? 'Failed to initialize'
+    : !isInitialized ? 'Initializing...'
+    : 'Ready to analyze audio';
 
   return (
     <div className="app">
       <div className="container">
-        <h1>🎤 LipSyncEngine.js</h1>
-        <p className="subtitle">React Example - All Execution Modes</p>
+        <h1>lip-sync-engine</h1>
+        <p className="subtitle">React example with four execution modes</p>
 
-        {/* Mode Selector */}
         <div className="mode-selector">
           <h3>Execution Mode</h3>
           <div className="mode-buttons">
-            <button
-              className={`mode-btn ${mode === 'single' ? 'active' : ''}`}
-              onClick={() => handleModeChange('single')}
-              disabled={isAnalyzing || isRecording}
-            >
-              <div className="mode-title">Single Thread</div>
-              <div className="mode-desc">Blocks UI during analysis</div>
-            </button>
-            <button
-              className={`mode-btn ${mode === 'worker' ? 'active' : ''}`}
-              onClick={() => handleModeChange('worker')}
-              disabled={isAnalyzing || isRecording}
-            >
-              <div className="mode-title">Web Worker</div>
-              <div className="mode-desc">Non-blocking, UI stays responsive</div>
-            </button>
-            <button
-              className={`mode-btn ${mode === 'chunked' ? 'active' : ''}`}
-              onClick={() => handleModeChange('chunked')}
-              disabled={isAnalyzing || isRecording}
-            >
-              <div className="mode-title">Chunked Workers</div>
-              <div className="mode-desc">Parallel processing (~5x faster)</div>
-            </button>
-            <button
-              className={`mode-btn ${mode === 'streaming' ? 'active' : ''}`}
-              onClick={() => handleModeChange('streaming')}
-              disabled={isAnalyzing || isRecording}
-            >
-              <div className="mode-title">Streaming</div>
-              <div className="mode-desc">Chunks with 500 ms context</div>
-            </button>
+            {MODES.map(({ id, title, description }) => (
+              <button
+                key={id}
+                className={`mode-btn ${mode === id ? 'active' : ''}`}
+                onClick={() => setMode(id)}
+                disabled={busy}
+              >
+                <div className="mode-title">{title}</div>
+                <div className="mode-desc">{description}</div>
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Recording Duration Slider */}
         <div className="chunk-settings">
           <label htmlFor="recordingDuration">
-            Recording Duration: {recordingDuration}s
+            Recording Duration: {recordingDuration} s
           </label>
           <input
             id="recordingDuration"
@@ -286,16 +279,15 @@ function App() {
             step="5"
             value={recordingDuration}
             onChange={(e) => setRecordingDuration(Number(e.target.value))}
-            disabled={isAnalyzing || isRecording}
+            disabled={busy}
           />
-          <small>Adjust recording duration (5-60 seconds)</small>
+          <small>5 to 60 seconds</small>
         </div>
 
-        {/* Chunk Settings - Only visible in chunked or streaming mode */}
         {(mode === 'chunked' || mode === 'streaming') && (
           <div className="chunk-settings">
             <label htmlFor="chunkSize">
-              Chunk Size (seconds): {chunkSize}s
+              Chunk Size: {chunkSize} s
             </label>
             <input
               id="chunkSize"
@@ -305,65 +297,59 @@ function App() {
               step="1"
               value={chunkSize}
               onChange={(e) => setChunkSize(Number(e.target.value))}
-              disabled={isAnalyzing || isRecording}
+              disabled={busy}
             />
             <small>
               {mode === 'chunked'
-                ? 'Chunks are analysed alone: smaller chunks run more in parallel but lose accuracy at the edges'
-                : 'Each chunk is analysed with 500 ms of audio before and after it'}
+                ? 'Chunks are analyzed alone: smaller chunks run more in parallel but lose accuracy at the edges'
+                : 'Chunks are analyzed with up to 500 ms of audio before and after them'}
             </small>
           </div>
         )}
 
         <div className="input-group">
           <label htmlFor="dialogText">
-            Dialog Text (Optional - improves accuracy)
+            Dialog Text (optional, improves accuracy)
           </label>
           <input
             id="dialogText"
             type="text"
             value={dialogText}
             onChange={(e) => setDialogText(e.target.value)}
-            placeholder="Enter the text that will be spoken..."
-            disabled={isAnalyzing || isRecording}
+            placeholder="Enter the text that will be spoken"
+            disabled={busy}
           />
         </div>
 
         <div className="controls">
           <button
             onClick={handleRecord}
-            disabled={isAnalyzing || isRecording}
+            disabled={!canAnalyze}
             className="btn"
           >
-            {isRecording ? '🎙️ Recording...' : `🎙️ Record Audio (${recordingDuration}s)`}
+            {isRecording ? 'Recording...' : `Record Audio (${recordingDuration} s)`}
           </button>
-          <label className="btn">
-            📁 Load Audio File
+          <label className={`btn ${canAnalyze ? '' : 'disabled'}`} aria-disabled={!canAnalyze}>
+            Load Audio File
             <input
               type="file"
               accept="audio/*"
               onChange={handleFileUpload}
-              disabled={isAnalyzing || isRecording}
-              style={{ display: 'none' }}
+              disabled={!canAnalyze}
+              hidden
             />
           </label>
         </div>
 
-        <div className={`status ${isRecording ? 'recording' : isAnalyzing || !isInitialized ? 'analyzing' : ''}`}>
-          {isRecording ? 'Recording... Speak now!'
-            : isAnalyzing ? 'Analyzing audio...'
-            : !isInitialized ? 'Initializing...'
-            : 'Ready to analyze audio'}
-        </div>
+        <div className={`status ${statusClass}`}>{statusText}</div>
 
-        {/* Performance Metrics */}
         {metrics && (
           <div className="metrics">
             <h3>Performance Metrics</h3>
             <div className="metrics-grid">
               <div className="metric">
                 <div className="metric-label">Execution Time</div>
-                <div className="metric-value">{metrics.executionTime.toFixed(2)}ms</div>
+                <div className="metric-value">{Math.round(metrics.executionTime)} ms</div>
               </div>
               <div className="metric">
                 <div className="metric-label">Mouth Cues</div>
@@ -388,7 +374,7 @@ function App() {
         <div className="viseme-display">
           <div>
             <div className="viseme-images">
-              {['X', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((viseme) => (
+              {Object.keys(SHAPE_NAMES).map((viseme) => (
                 <img
                   key={viseme}
                   src={`/visemes/${viseme}.png`}
@@ -398,7 +384,7 @@ function App() {
               ))}
             </div>
             <div className="viseme-label">
-              {visemeNames[currentViseme]} ({currentViseme})
+              {currentViseme}: {SHAPE_NAMES[currentViseme]}
             </div>
           </div>
         </div>
@@ -409,23 +395,27 @@ function App() {
               <h3>Lip Sync Results</h3>
               <button
                 className="play-btn"
-                onClick={handlePlay}
-                disabled={isPlaying}
+                onClick={isPlaying ? stopPlayback : handlePlay}
+                disabled={!audioBuffer}
               >
-                {isPlaying ? '⏸ Playing' : '▶ Play'}
+                {isPlaying ? 'Stop' : 'Play'}
               </button>
             </div>
             <div className="cues-list">
               {result.mouthCues.map((cue, index) => (
                 <div key={index} className="cue">
                   <span className="cue-time">
-                    {cue.start.toFixed(2)}s - {cue.end.toFixed(2)}s
+                    {cue.start.toFixed(2)} s to {cue.end.toFixed(2)} s
                   </span>
                   <span className="cue-value">{cue.value}</span>
                 </div>
               ))}
             </div>
           </div>
+        )}
+
+        {initError && (
+          <div className="error">{initFailureText}</div>
         )}
 
         {error && (
@@ -450,13 +440,34 @@ function App() {
   );
 }
 
+/** Short mode name used in log lines */
 function modeLabel(mode: ExecutionMode): string {
   switch (mode) {
-    case 'single': return 'Single Thread (blocks UI)';
-    case 'worker': return 'Web Worker (non-blocking)';
-    case 'chunked': return 'Chunked Workers (parallel)';
-    case 'streaming': return 'Streaming (500 ms context and lookahead)';
+    case 'single': return 'Single Thread';
+    case 'worker': return 'Web Worker';
+    case 'chunked': return 'Chunked';
+    case 'streaming': return 'Streaming';
   }
+}
+
+/**
+ * Error text for a mode that failed to start. The library keeps a failed WASM
+ * load, so Single Thread needs a reload; a worker pool that failed to start
+ * tries again the next time a worker mode is selected.
+ */
+function startupFailureMessage(error: Error, mode: ExecutionMode): string {
+  const message = error.message.replace(/\.+$/, '');
+  return mode === 'single'
+    ? `${message}. Reload the page to retry.`
+    : `${message}. Switch modes or reload the page to retry.`;
+}
+
+function seconds(pcm16: Int16Array): string {
+  return (pcm16.length / SAMPLE_RATE).toFixed(2);
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 export default App;
